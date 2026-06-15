@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Checkout | Argyle Pantry</title>
+    <link rel="stylesheet" href="styles.css?v=contact-us-1" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="index.html" aria-label="Argyle Pantry home">
+        <img src="logo.png" alt="Argyle Pantry logo" />
+        <span>Argyle Pantry</span>
+        <span class="jp-stamp" aria-label="Argyle Pantry in Japanese">アーガイル<br />パントリー</span>
+      </a>
+      <nav class="site-nav" aria-label="Main navigation">
+        <a href="menu.html">Menu</a>
+        <a href="menu.html#order" aria-current="page">Order Online</a>
+        <a href="index.html#reserve">Reserve</a>
+        <a href="index.html#contact">Contact us</a>
+      </nav>
+    </header>
+
+    <main class="checkout-page">
+      <section class="menu-hero checkout-hero">
+        <div>
+          <p class="service-line">Order details</p>
+          <h1>Confirm your order</h1>
+          <p>Review your dishes, then add pickup details so we can prepare everything for you.</p>
+        </div>
+        <a class="button secondary checkout-back" href="menu.html#order">Back to menu</a>
+      </section>
+
+      <section class="checkout-layout">
+        <aside class="checkout-summary" aria-label="Order summary">
+          <div class="order-panel-header">
+            <span>Your order</span>
+            <strong id="checkoutItemCount">0 items</strong>
+          </div>
+          <div class="order-empty" id="checkoutEmpty">
+            Your cart is empty. Please choose dishes from the menu first.
+          </div>
+          <ul class="order-list checkout-order-list" id="checkoutOrderList"></ul>
+          <div class="checkout-total" id="checkoutTotal" hidden></div>
+        </aside>
+
+        <form class="checkout-form" id="checkoutForm" action="/api/orders" method="post">
+          <div>
+            <p class="section-kicker">Customer details</p>
+            <h2>Pickup information</h2>
+          </div>
+          <label>
+            Name
+            <input type="text" name="name" autocomplete="name" required />
+          </label>
+          <label>
+            Phone
+            <input type="tel" name="phone" autocomplete="tel" inputmode="tel" required />
+          </label>
+          <label>
+            Email
+            <input type="email" name="email" autocomplete="email" required />
+          </label>
+          <label>
+            Pickup time
+            <input type="time" name="pickupTime" min="10:00" max="20:30" required />
+          </label>
+          <fieldset class="dining-options">
+            <legend>Dine in or takeaway</legend>
+            <label>
+              <input type="radio" name="serviceType" value="Takeaway" required checked />
+              <span>Takeaway</span>
+            </label>
+            <label>
+              <input type="radio" name="serviceType" value="Dine in" required />
+              <span>Dine in</span>
+            </label>
+          </fieldset>
+          <label>
+            Extra notes
+            <textarea name="notes" rows="4" placeholder="Sauce, allergies, pickup details, or anything we should know."></textarea>
+          </label>
+          <button class="button primary" type="submit">Submit order</button>
+          <p class="reservation-message" id="checkoutMessage" aria-live="polite"></p>
+        </form>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="brand footer-brand">
+        <img src="logo.png" alt="" />
+        <span>Argyle Pantry</span>
+      </div>
+      <p>Japanese fast casual meals, made fresh for takeaway and dine-in.</p>
+    </footer>
+
+    <script src="checkout.js?v=customer-receipt-1"></script>
+  </body>
+</html>

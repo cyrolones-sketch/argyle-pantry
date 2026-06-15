@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Menu | Argyle Pantry</title>
+    <link rel="stylesheet" href="styles.css?v=contact-us-1" />
+  </head>
+  <body>
+    <header class="site-header">
+      <a class="brand" href="index.html" aria-label="Argyle Pantry home">
+        <img src="logo.png" alt="Argyle Pantry logo" />
+        <span>Argyle Pantry</span>
+        <span class="jp-stamp" aria-label="Argyle Pantry in Japanese">アーガイル<br />パントリー</span>
+      </a>
+      <nav class="site-nav" aria-label="Main navigation">
+        <a href="menu.html" aria-current="page">Menu</a>
+        <a href="#order">Order Online</a>
+        <a href="index.html#reserve">Reserve</a>
+        <a href="index.html#contact">Contact us</a>
+      </nav>
+      <a class="header-action" href="#order" aria-label="Open order summary">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M6.2 6h15l-1.7 8.5a2 2 0 0 1-2 1.6H8.7a2 2 0 0 1-2-1.7L5.2 3.8H2.8" />
+          <circle cx="9.5" cy="20" r="1.3" />
+          <circle cx="17.6" cy="20" r="1.3" />
+        </svg>
+        <span id="cartCount">0</span>
+      </a>
+    </header>
+
+    <main>
+      <section class="menu-hero">
+        <div>
+          <p class="service-line">Pickup from 20 min</p>
+          <h1>Menu</h1>
+          <p>
+            Browse bento, rice bowls, ramen, udon, sushi and sides.
+            Choose your favourites for pickup or easy online ordering.
+          </p>
+        </div>
+        <div class="menu-search">
+          <label for="menuSearch">Search dishes</label>
+          <input id="menuSearch" type="search" placeholder="Search chicken, ramen, bento..." />
+        </div>
+      </section>
+
+      <section class="menu-layout">
+        <aside class="category-rail" aria-label="Menu categories">
+          <button class="category-filter active" type="button" data-category="All">All dishes</button>
+        </aside>
+
+        <section class="menu-results" aria-live="polite">
+          <div class="menu-results-header">
+            <div>
+              <p class="section-kicker">Freshly prepared</p>
+              <h2 id="activeCategory">All dishes</h2>
+            </div>
+            <span id="resultCount">0 items</span>
+          </div>
+          <div class="menu-grid" id="menuGrid"></div>
+        </section>
+
+        <aside class="order-panel" id="order" aria-label="Order summary">
+          <div class="order-panel-header">
+            <span>Order</span>
+            <strong id="orderItemCount">0 items</strong>
+          </div>
+          <div class="order-empty" id="orderEmpty">
+            Choose dishes from the menu to start an order.
+          </div>
+          <ul class="order-list" id="orderList"></ul>
+          <a class="button primary order-mail" id="orderMail" href="checkout.html">
+            Submit order
+          </a>
+        </aside>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="brand footer-brand">
+        <img src="logo.png" alt="" />
+        <span>Argyle Pantry</span>
+      </div>
+      <p>Japanese fast casual meals, made fresh for takeaway and dine-in.</p>
+    </footer>
+
+    <script src="menu-data.js?v=drinks-1"></script>
+    <script src="app.js?v=tiny-pickle-1"></script>
+  </body>
+</html>
