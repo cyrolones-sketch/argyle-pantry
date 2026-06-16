@@ -108,7 +108,7 @@ async function handleReservation(request, response) {
     html: ownerEmail.html
   });
 
-  await sendSmtpMail({
+  const receiptSent = await sendOptionalCustomerReceipt({
     from: SMTP_FROM,
     to: reservation.email,
     replyTo: EMAIL_TO,
@@ -117,7 +117,7 @@ async function handleReservation(request, response) {
     html: customerEmail.html
   });
 
-  sendJson(response, 200, { message: "Reservation request sent." });
+  sendJson(response, 200, { message: "Reservation request sent.", receiptSent });
 }
 
 async function handleOrder(request, response) {
@@ -155,7 +155,7 @@ async function handleOrder(request, response) {
     html: ownerEmail.html
   });
 
-  await sendSmtpMail({
+  const receiptSent = await sendOptionalCustomerReceipt({
     from: SMTP_FROM,
     to: order.customer.email,
     replyTo: EMAIL_TO,
@@ -164,7 +164,7 @@ async function handleOrder(request, response) {
     html: customerEmail.html
   });
 
-  sendJson(response, 200, { message: "Order request sent." });
+  sendJson(response, 200, { message: "Order request sent.", receiptSent });
 }
 
 function isEmailConfigured() {
@@ -628,6 +628,16 @@ function sendSmtpMail({ from, to, replyTo, subject, text, html }) {
     [`${dotStuff(message)}\r\n.`],
     ["QUIT"]
   ]);
+}
+
+async function sendOptionalCustomerReceipt(mailOptions) {
+  try {
+    await sendSmtpMail(mailOptions);
+    return true;
+  } catch (error) {
+    console.warn("Customer receipt email could not be sent:", error.message);
+    return false;
+  }
 }
 
 function isResendConfigured() {
