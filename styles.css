@@ -1583,28 +1583,27 @@ h3 {
   }
 
   .home-page .hero-section {
-    display: grid;
-    grid-template-columns: 1fr;
-    min-height: auto;
+    display: block;
+    min-height: 720px;
   }
 
   .home-page .hero-copy {
     max-width: 760px;
-    padding: 54px 28px 30px;
+    padding: 54px 28px 40px;
   }
 
   .home-page .hero-media {
-    grid-column: 1;
-    height: auto;
-    inset: auto;
-    min-height: auto;
-    position: relative;
+    height: 100%;
+    inset: 0;
+    min-height: 100%;
+    position: absolute;
   }
 
   .home-page .hero-main-image {
-    aspect-ratio: 16 / 9;
-    height: auto;
+    aspect-ratio: auto;
+    height: 100%;
     object-fit: cover;
+    object-position: center center;
     width: 100%;
   }
 
@@ -1618,6 +1617,27 @@ h3 {
 }
 
 @media (max-width: 760px) {
+  .home-page .hero-section {
+    min-height: 780px;
+  }
+
+  .home-page .hero-section::after {
+    background:
+      linear-gradient(
+        90deg,
+        #fbfaf7 0%,
+        rgba(251, 250, 247, 0.99) 54%,
+        rgba(251, 250, 247, 0.82) 74%,
+        rgba(251, 250, 247, 0.18) 100%
+      ),
+      linear-gradient(
+        180deg,
+        rgba(251, 250, 247, 0.72) 0%,
+        rgba(251, 250, 247, 0.2) 58%,
+        rgba(251, 250, 247, 0) 100%
+      );
+  }
+
   .home-page .site-header {
     align-items: center;
     flex-wrap: wrap;
@@ -1724,7 +1744,9 @@ h3 {
   }
 
   .home-page .hero-main-image {
-    aspect-ratio: 4 / 3;
+    aspect-ratio: auto;
+    height: 100%;
+    object-position: 58% center;
   }
 
   .home-page .category-preview {
