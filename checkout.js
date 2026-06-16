@@ -125,7 +125,10 @@ if (checkoutForm) {
       cart = [];
       renderCheckoutOrder();
       checkoutForm.reset();
-      setCheckoutMessage("Thank you. Your order has been sent. A receipt has also been emailed to you.", "success");
+      const successMessage = result.receiptSent === false
+        ? "Thank you. Your order has been sent to Argyle Pantry."
+        : "Thank you. Your order has been sent. A receipt has also been emailed to you.";
+      setCheckoutMessage(successMessage, "success");
     } catch (error) {
       const message = error instanceof TypeError
         ? "Order server is not running. Please try again later or call the restaurant."
