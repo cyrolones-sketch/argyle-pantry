@@ -66,7 +66,10 @@ if (reservationForm) {
         timeInput.min = TRADING_OPEN;
         timeInput.max = TRADING_CLOSE;
       }
-      setReservationMessage("Thank you. Your reservation request has been sent. A receipt has also been emailed to you.", "success");
+      const successMessage = result.receiptSent === false
+        ? "Thank you. Your reservation request has been sent to Argyle Pantry."
+        : "Thank you. Your reservation request has been sent. A receipt has also been emailed to you.";
+      setReservationMessage(successMessage, "success");
     } catch (error) {
       const message = error instanceof TypeError
         ? "Reservation server is not running. Please try again later or call the restaurant."
