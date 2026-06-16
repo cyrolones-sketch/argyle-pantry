@@ -1,4 +1,5 @@
 const http = require("http");
+const https = require("https");
 const fs = require("fs");
 const path = require("path");
 const tls = require("tls");
@@ -167,6 +168,7 @@ async function handleOrder(request, response) {
 }
 
 function isEmailConfigured() {
+  if (isResendConfigured()) return Boolean(SMTP_PASS && SMTP_FROM && EMAIL_TO);
   return Boolean(SMTP_HOST && SMTP_PORT && SMTP_USER && SMTP_PASS && SMTP_FROM && EMAIL_TO);
 }
 
@@ -575,6 +577,17 @@ function buildOrderReceiptEmail(order) {
 
 function sendSmtpMail({ from, to, replyTo, subject, text, html }) {
   const fromEmail = extractEmail(from);
+  if (isResendConfigured()) {
+    return sendResendMail({
+      from: formatMailbox("Argyle Pantry Website", fromEmail),
+      to,
+      replyTo,
+      subject,
+      text,
+      html
+    });
+  }
+
   const boundary = `argyle-${Date.now().toString(36)}`;
   const headers = [
     `From: ${formatMailbox("Argyle Pantry Website", fromEmail)}`,
@@ -615,6 +628,59 @@ function sendSmtpMail({ from, to, replyTo, subject, text, html }) {
     [`${dotStuff(message)}\r\n.`],
     ["QUIT"]
   ]);
+}
+
+function isResendConfigured() {
+  return SMTP_HOST === "smtp.resend.com" || SMTP_USER === "resend" || Boolean(process.env.RESEND_API_KEY);
+}
+
+function sendResendMail({ from, to, replyTo, subject, text, html }) {
+  const payload = {
+    from,
+    to: [to],
+    subject,
+    text,
+    html
+  };
+  if (replyTo) payload.reply_to = replyTo;
+
+  return new Promise((resolve, reject) => {
+    const body = JSON.stringify(payload);
+    const request = https.request(
+      {
+        hostname: "api.resend.com",
+        path: "/emails",
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${SMTP_PASS}`,
+          "Content-Type": "application/json",
+          "Content-Length": Buffer.byteLength(body)
+        },
+        timeout: 20000
+      },
+      (response) => {
+        let data = "";
+        response.setEncoding("utf8");
+        response.on("data", (chunk) => {
+          data += chunk;
+        });
+        response.on("end", () => {
+          if (response.statusCode >= 200 && response.statusCode < 300) {
+            resolve();
+            return;
+          }
+          reject(new Error(`Resend rejected the message: ${response.statusCode} ${data}`));
+        });
+      }
+    );
+
+    request.on("timeout", () => {
+      request.destroy(new Error("Resend API timed out."));
+    });
+    request.on("error", reject);
+    request.write(body);
+    request.end();
+  });
 }
 
 function smtpTransaction(commands) {
