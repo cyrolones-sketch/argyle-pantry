@@ -68,7 +68,7 @@
                 <path d="M12 7v6l4 2" />
               </svg>
               <strong>Open today</strong>
-              11:00 - 21:00
+              11:30 - 20:30
             </span>
             <span>
               <svg viewBox="0 0 24 24" aria-hidden="true">
@@ -148,6 +148,7 @@
           <h2>Save a table for lunch, dinner or a small group meal</h2>
         </div>
         <form class="reservation-form" id="reservationForm" action="/api/reservations" method="post">
+          <p class="form-hours field-wide">Sunday-Friday, 11:30am-8:30pm. Closed Saturdays.</p>
           <label>
             Name
             <input type="text" name="name" autocomplete="name" required />
@@ -166,7 +167,7 @@
           </label>
           <label>
             Time
-            <input type="time" name="time" min="10:00" max="20:30" required />
+            <input type="time" name="time" min="11:30" max="20:30" required />
           </label>
           <label>
             Guests
@@ -227,6 +228,6 @@
       </div>
       <p>Japanese fast casual meals, made fresh for takeaway and dine-in.</p>
     </footer>
-    <script src="reservation.js?v=receipt-fallback-1"></script>
+    <script src="reservation.js?v=service-wakeup-1"></script>
   </body>
 </html>
