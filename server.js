@@ -16,7 +16,7 @@ const SMTP_USER = process.env.SMTP_USER || (process.env.RESEND_API_KEY ? "resend
 const SMTP_PASS = process.env.SMTP_PASS || process.env.RESEND_API_KEY || process.env.GMAIL_APP_PASSWORD || "";
 const SMTP_FROM = process.env.SMTP_FROM || process.env.EMAIL_FROM || "";
 const DRY_RUN = process.env.RESERVATION_DRY_RUN === "true";
-const TRADING_OPEN = "10:00";
+const TRADING_OPEN = "11:30";
 const TRADING_CLOSE = "20:30";
 
 const contentTypes = {
@@ -43,6 +43,15 @@ const server = http.createServer(async (request, response) => {
       return;
     }
 
+    if (request.method === "GET" && new URL(request.url, `http://${request.headers.host}`).pathname === "/api/health") {
+      response.writeHead(200, {
+        "Cache-Control": "no-store",
+        "Content-Type": "application/json; charset=utf-8"
+      });
+      response.end(JSON.stringify({ status: "ok" }));
+      return;
+    }
+
     if (request.method !== "GET" && request.method !== "HEAD") {
       sendJson(response, 405, { message: "Method not allowed." });
       return;
@@ -55,9 +64,11 @@ const server = http.createServer(async (request, response) => {
   }
 });
 
-server.listen(PORT, HOST, () => {
-  console.log(`Argyle Pantry website running at http://${HOST}:${PORT}`);
-});
+if (require.main === module) {
+  server.listen(PORT, HOST, () => {
+    console.log(`Argyle Pantry website running at http://${HOST}:${PORT}`);
+  });
+}
 
 function loadEnvFile(filePath) {
   if (!fs.existsSync(filePath)) return;
@@ -99,16 +110,14 @@ async function handleReservation(request, response) {
     return;
   }
 
-  await sendSmtpMail({
+  const receiptSent = await sendOwnerThenCustomerReceipt({
     from: SMTP_FROM,
     to: EMAIL_TO,
     replyTo: reservation.email,
     subject: ownerEmail.subject,
     text: ownerEmail.text,
     html: ownerEmail.html
-  });
-
-  const receiptSent = await sendOptionalCustomerReceipt({
+  }, {
     from: SMTP_FROM,
     to: reservation.email,
     replyTo: EMAIL_TO,
@@ -146,16 +155,14 @@ async function handleOrder(request, response) {
     return;
   }
 
-  await sendSmtpMail({
+  const receiptSent = await sendOwnerThenCustomerReceipt({
     from: SMTP_FROM,
     to: EMAIL_TO,
     replyTo: order.customer.email,
     subject: ownerEmail.subject,
     text: ownerEmail.text,
     html: ownerEmail.html
-  });
-
-  const receiptSent = await sendOptionalCustomerReceipt({
+  }, {
     from: SMTP_FROM,
     to: order.customer.email,
     replyTo: EMAIL_TO,
@@ -224,8 +231,16 @@ function validateReservation(reservation) {
     errors.push("Please enter a valid email address.");
   }
 
+  if (reservation.date && !isValidDateValue(reservation.date)) {
+    errors.push("Please choose a valid reservation date.");
+  }
+
   if (reservation.time && !isWithinTradingHours(reservation.time)) {
     errors.push(`Reservation time must be between ${TRADING_OPEN} and ${TRADING_CLOSE}.`);
+  }
+
+  if (reservation.date && isSaturday(reservation.date)) {
+    errors.push("Argyle Pantry is closed on Saturdays. Please choose another reservation date.");
   }
 
   if (reservation.guests && (!Number.isInteger(Number(reservation.guests)) || Number(reservation.guests) < 1)) {
@@ -243,8 +258,11 @@ function normalizeOrder(payload) {
       name: String(customer.name || "").trim(),
       phone: String(customer.phone || "").trim(),
       email: String(customer.email || "").trim(),
+      pickupDate: String(customer.pickupDate || "").trim(),
       pickupTime: String(customer.pickupTime || "").trim(),
       serviceType: String(customer.serviceType || "").trim(),
+      cutleryNeeded: customer.cutleryNeeded === true || customer.cutleryNeeded === "Yes",
+      cutleryCount: Number(customer.cutleryCount || 0),
       notes: String(customer.notes || "").trim()
     },
     items: items.map((item) => ({
@@ -263,6 +281,7 @@ function validateOrder(order) {
     ["name", "Please enter your name."],
     ["phone", "Please enter your phone number."],
     ["email", "Please enter your email address."],
+    ["pickupDate", "Please choose a pickup date."],
     ["pickupTime", "Please choose a pickup time."],
     ["serviceType", "Please choose dine in or takeaway."]
   ];
@@ -279,8 +298,21 @@ function validateOrder(order) {
     errors.push("Please enter a valid email address.");
   }
 
+  if (order.customer.pickupDate && !isValidDateValue(order.customer.pickupDate)) {
+    errors.push("Please choose a valid pickup date.");
+  }
+
   if (order.customer.pickupTime && !isWithinTradingHours(order.customer.pickupTime)) {
     errors.push(`Pickup time must be between ${TRADING_OPEN} and ${TRADING_CLOSE}.`);
+  }
+
+
+  if (order.customer.pickupDate && isSaturday(order.customer.pickupDate)) {
+    errors.push("Argyle Pantry is closed on Saturdays. Please choose another pickup date.");
+  }
+
+  if (order.customer.cutleryNeeded && (!Number.isInteger(order.customer.cutleryCount) || order.customer.cutleryCount < 1 || order.customer.cutleryCount > 50)) {
+    errors.push("Please choose between 1 and 50 cutlery sets.");
   }
 
   if (!order.items.length) {
@@ -406,8 +438,10 @@ function buildOrderEmail(order) {
     ["Name", order.customer.name],
     ["Phone", order.customer.phone],
     ["Email", order.customer.email],
+    ["Pickup date", order.customer.pickupDate],
     ["Pickup time", order.customer.pickupTime],
     ["Service", order.customer.serviceType],
+    ["Cutlery", order.customer.cutleryNeeded ? `${order.customer.cutleryCount} set(s)` : "Not required"],
     ["Notes", order.customer.notes || "No notes"],
     ["Submitted", submittedAt]
   ];
@@ -435,7 +469,7 @@ function buildOrderEmail(order) {
     })
     .join("");
 
-  const subject = `Argyle Pantry order: ${order.customer.name} - ${order.customer.pickupTime}`;
+  const subject = `Argyle Pantry order: ${order.customer.name} - ${order.customer.pickupDate} ${order.customer.pickupTime}`;
   const text = [
     "Customer",
     ...customerRows.map(([label, value]) => `${label}: ${value}`),
@@ -491,8 +525,10 @@ function buildOrderReceiptEmail(order) {
     ["Name", order.customer.name],
     ["Phone", order.customer.phone],
     ["Email", order.customer.email],
+    ["Pickup date", order.customer.pickupDate],
     ["Pickup time", order.customer.pickupTime],
     ["Service", order.customer.serviceType],
+    ["Cutlery", order.customer.cutleryNeeded ? `${order.customer.cutleryCount} set(s)` : "Not required"],
     ["Notes", order.customer.notes || "No notes"]
   ];
   const total = order.items.reduce((sum, item) => sum + moneyValue(item.price) * item.quantity, 0);
@@ -519,7 +555,7 @@ function buildOrderReceiptEmail(order) {
     })
     .join("");
 
-  const subject = `Your Argyle Pantry order - ${order.customer.pickupTime}`;
+  const subject = `Your Argyle Pantry order - ${order.customer.pickupDate} ${order.customer.pickupTime}`;
   const text = [
     "Thank you. We have received your order.",
     "",
@@ -638,6 +674,12 @@ async function sendOptionalCustomerReceipt(mailOptions) {
     console.warn("Customer receipt email could not be sent:", error.message);
     return false;
   }
+}
+
+async function sendOwnerThenCustomerReceipt(ownerMailOptions, customerMailOptions) {
+  // A customer receipt is attempted only after the provider accepts the store email.
+  await sendSmtpMail(ownerMailOptions);
+  return sendOptionalCustomerReceipt(customerMailOptions);
 }
 
 function isResendConfigured() {
@@ -802,6 +844,21 @@ function isWithinTradingHours(value) {
   return minutes >= timeToMinutes(TRADING_OPEN) && minutes <= timeToMinutes(TRADING_CLOSE);
 }
 
+function isSaturday(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ""));
+  if (!match) return false;
+  const [, year, month, day] = match.map(Number);
+  return new Date(Date.UTC(year, month - 1, day)).getUTCDay() === 6;
+}
+
+function isValidDateValue(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ""));
+  if (!match) return false;
+  const [, year, month, day] = match.map(Number);
+  const date = new Date(Date.UTC(year, month - 1, day));
+  return date.getUTCFullYear() === year && date.getUTCMonth() === month - 1 && date.getUTCDate() === day;
+}
+
 function timeToMinutes(value) {
   const [hours, minutes] = String(value).split(":").map(Number);
   return hours * 60 + minutes;
@@ -823,3 +880,12 @@ function mimeWord(value) {
 function dotStuff(message) {
   return message.replace(/^\./gm, "..");
 }
+
+module.exports = {
+  buildOrderEmail,
+  buildOrderReceiptEmail,
+  normalizeOrder,
+  normalizeReservation,
+  validateOrder,
+  validateReservation
+};
