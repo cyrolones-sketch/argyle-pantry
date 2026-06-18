@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Checkout | Argyle Pantry</title>
-    <link rel="stylesheet" href="styles.css?v=contact-us-1" />
+    <link rel="stylesheet" href="styles.css?v=hours-cutlery-1" />
   </head>
   <body>
     <header class="site-header">
@@ -48,6 +48,7 @@
           <div>
             <p class="section-kicker">Customer details</p>
             <h2>Pickup information</h2>
+            <p class="form-hours">Sunday-Friday, 11:30am-8:30pm. Closed Saturdays.</p>
           </div>
           <label>
             Name
@@ -62,8 +63,12 @@
             <input type="email" name="email" autocomplete="email" required />
           </label>
           <label>
+            Pickup date
+            <input type="date" name="pickupDate" required />
+          </label>
+          <label>
             Pickup time
-            <input type="time" name="pickupTime" min="10:00" max="20:30" required />
+            <input type="time" name="pickupTime" min="11:30" max="20:30" required />
           </label>
           <fieldset class="dining-options">
             <legend>Dine in or takeaway</legend>
@@ -76,6 +81,21 @@
               <span>Dine in</span>
             </label>
           </fieldset>
+          <fieldset class="dining-options cutlery-options">
+            <legend>Do you need cutlery?</legend>
+            <label>
+              <input type="radio" name="cutleryNeeded" value="No" required checked />
+              <span>No cutlery</span>
+            </label>
+            <label>
+              <input type="radio" name="cutleryNeeded" value="Yes" required />
+              <span>Yes, please</span>
+            </label>
+          </fieldset>
+          <label id="cutleryCountField" hidden>
+            Number of cutlery sets
+            <input type="number" name="cutleryCount" min="1" max="50" inputmode="numeric" disabled />
+          </label>
           <label>
             Extra notes
             <textarea name="notes" rows="4" placeholder="Sauce, allergies, pickup details, or anything we should know."></textarea>
@@ -94,6 +114,6 @@
       <p>Japanese fast casual meals, made fresh for takeaway and dine-in.</p>
     </footer>
 
-    <script src="checkout.js?v=receipt-fallback-1"></script>
+    <script src="checkout.js?v=service-wakeup-1"></script>
   </body>
 </html>
