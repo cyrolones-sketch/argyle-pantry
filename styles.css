@@ -1347,6 +1347,10 @@ h3 {
   margin: 7px 0 0;
 }
 
+.reservation-form .form-hours {
+  color: var(--muted);
+}
+
 .checkout-form label,
 .dining-options legend {
   color: var(--muted);
