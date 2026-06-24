@@ -2,7 +2,6 @@ const reservationForm = document.querySelector("#reservationForm");
 const reservationMessage = document.querySelector("#reservationMessage");
 const TRADING_OPEN = "11:30";
 const TRADING_CLOSE = "20:30";
-const SERVICE_WAKE_DELAYS = [0, 2000, 4000, 8000];
 
 function setReservationMessage(text, type = "") {
   if (!reservationMessage) return;
@@ -21,19 +20,6 @@ function reservationPayload(form) {
     guests: String(data.get("guests") || "").trim(),
     notes: String(data.get("notes") || "").trim()
   };
-}
-
-async function waitForReservationService() {
-  for (const delay of SERVICE_WAKE_DELAYS) {
-    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
-    try {
-      const response = await fetch(`/api/health?t=${Date.now()}`, { cache: "no-store" });
-      if (response.ok) return;
-    } catch {
-      // Render may still be waking from sleep; try again after the next delay.
-    }
-  }
-  throw new TypeError("Reservation service is unavailable.");
 }
 
 if (reservationForm) {
@@ -68,13 +54,12 @@ if (reservationForm) {
     setReservationMessage("", "");
 
     try {
-      if (submitButton) submitButton.textContent = "Connecting...";
-      await waitForReservationService();
       if (submitButton) submitButton.textContent = "Sending...";
+      const payload = reservationPayload(reservationForm);
       const response = await fetch("/api/reservations", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(reservationPayload(reservationForm))
+        body: JSON.stringify(payload)
       });
       const result = await response.json().catch(() => ({}));
 
@@ -82,19 +67,16 @@ if (reservationForm) {
         throw new Error(result.message || "Reservation could not be sent. Please try again.");
       }
 
-      reservationForm.reset();
-      if (dateInput) dateInput.min = localDateValue(new Date());
-      if (timeInput) {
-        timeInput.min = TRADING_OPEN;
-        timeInput.max = TRADING_CLOSE;
-      }
-      const successMessage = result.receiptSent === false
-        ? "Thank you. Your reservation request has been sent to Argyle Pantry."
-        : "Thank you. Your reservation request has been sent. A receipt has also been emailed to you.";
-      setReservationMessage(successMessage, "success");
+      saveSubmissionSummary({
+        type: "reservation",
+        reservation: payload,
+        receiptSent: result.receiptSent !== false,
+        submittedAt: new Date().toISOString()
+      });
+      window.location.href = "success.html?type=reservation";
     } catch (error) {
       const message = error instanceof TypeError
-        ? "The reservation service is taking longer than expected to start. Please wait a moment and try again."
+        ? "The reservation service could not be reached. Please check your connection and try again."
         : error.message;
       setReservationMessage(message, "error");
     } finally {
@@ -105,8 +87,6 @@ if (reservationForm) {
     }
   });
 }
-
-waitForReservationService().catch(() => {});
 
 function localDateValue(date) {
   const year = date.getFullYear();
@@ -123,4 +103,12 @@ function isSaturday(dateValue) {
 function validateOpenDate(input) {
   input.setCustomValidity(isSaturday(input.value) ? "Argyle Pantry is closed on Saturdays. Please choose another day." : "");
   return input.checkValidity();
+}
+
+function saveSubmissionSummary(summary) {
+  try {
+    sessionStorage.setItem("argylePantrySubmission", JSON.stringify(summary));
+  } catch {
+    // The success page still has a fallback if session storage is unavailable.
+  }
 }
