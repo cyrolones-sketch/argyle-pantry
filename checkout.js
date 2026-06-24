@@ -142,26 +142,27 @@ if (checkoutForm) {
 
     try {
       submitButton.textContent = "Sending...";
+      const payload = checkoutPayload(checkoutForm);
       const response = await fetch("/api/orders", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(checkoutPayload(checkoutForm))
+        body: JSON.stringify(payload)
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) {
         throw new Error(result.message || "Order could not be sent. Please try again.");
       }
 
+      saveSubmissionSummary({
+        type: "order",
+        customer: payload.customer,
+        items: payload.items,
+        total: formatMoney(payload.items.reduce((sum, item) => sum + moneyValue(item.price) * item.quantity, 0)),
+        receiptSent: result.receiptSent !== false,
+        submittedAt: new Date().toISOString()
+      });
       localStorage.removeItem(CART_STORAGE_KEY);
-      cart = [];
-      renderCheckoutOrder();
-      checkoutForm.reset();
-      if (pickupDateInput) pickupDateInput.min = hobartDateTimeParts().date;
-      updateCutleryField();
-      const successMessage = result.receiptSent === false
-        ? "Thank you. Your order has been sent to Argyle Pantry."
-        : "Thank you. Your order has been sent. A receipt has also been emailed to you.";
-      setCheckoutMessage(successMessage, "success");
+      window.location.href = "success.html?type=order";
     } catch (error) {
       const message = error instanceof TypeError
         ? "The order service could not be reached. Please check your connection and try again."
@@ -228,6 +229,14 @@ function hobartDateTimeParts() {
 function timeToMinutes(value) {
   const [hours, minutes] = String(value).split(":").map(Number);
   return hours * 60 + minutes;
+}
+
+function saveSubmissionSummary(summary) {
+  try {
+    sessionStorage.setItem("argylePantrySubmission", JSON.stringify(summary));
+  } catch {
+    // The success page still has a fallback if session storage is unavailable.
+  }
 }
 
 renderCheckoutOrder();
