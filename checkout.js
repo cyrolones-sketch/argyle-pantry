@@ -7,7 +7,8 @@ const checkoutTotal = document.querySelector("#checkoutTotal");
 const checkoutMessage = document.querySelector("#checkoutMessage");
 const TRADING_OPEN = "11:30";
 const TRADING_CLOSE = "20:30";
-const SERVICE_WAKE_DELAYS = [0, 2000, 4000, 8000];
+const MIN_PICKUP_NOTICE_MINUTES = 15;
+const MIN_PICKUP_NOTICE_MESSAGE = "Please choose a pickup time at least 15 minutes from now. We need at least 15 minutes to prepare your food, and during busy periods it may take a little longer. We will prepare your order as quickly as we can.";
 
 let cart = loadCart();
 
@@ -90,19 +91,6 @@ function setCheckoutMessage(text, type = "") {
   checkoutMessage.dataset.type = type;
 }
 
-async function waitForOrderService() {
-  for (const delay of SERVICE_WAKE_DELAYS) {
-    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
-    try {
-      const response = await fetch(`/api/health?t=${Date.now()}`, { cache: "no-store" });
-      if (response.ok) return;
-    } catch {
-      // Render may still be waking from sleep; try again after the next delay.
-    }
-  }
-  throw new TypeError("Order service is unavailable.");
-}
-
 if (checkoutForm) {
   const pickupDateInput = checkoutForm.querySelector('input[name="pickupDate"]');
   const pickupTimeInput = checkoutForm.querySelector('input[name="pickupTime"]');
@@ -111,12 +99,14 @@ if (checkoutForm) {
   const cutleryCountInput = checkoutForm.querySelector('input[name="cutleryCount"]');
 
   if (pickupDateInput) {
-    pickupDateInput.min = localDateValue(new Date());
-    pickupDateInput.addEventListener("change", () => validateOpenDate(pickupDateInput));
+    pickupDateInput.min = hobartDateTimeParts().date;
+    pickupDateInput.addEventListener("change", () => validatePickupDateTime(pickupDateInput, pickupTimeInput));
   }
   if (pickupTimeInput) {
     pickupTimeInput.min = TRADING_OPEN;
     pickupTimeInput.max = TRADING_CLOSE;
+    pickupTimeInput.addEventListener("input", () => validatePickupDateTime(pickupDateInput, pickupTimeInput));
+    pickupTimeInput.addEventListener("change", () => validatePickupDateTime(pickupDateInput, pickupTimeInput));
   }
 
   const updateCutleryField = () => {
@@ -135,8 +125,8 @@ if (checkoutForm) {
       setCheckoutMessage("Please add dishes to your order first.", "error");
       return;
     }
-    if (pickupDateInput && !validateOpenDate(pickupDateInput)) {
-      pickupDateInput.reportValidity();
+    if (!validatePickupDateTime(pickupDateInput, pickupTimeInput)) {
+      (pickupDateInput && !pickupDateInput.checkValidity() ? pickupDateInput : pickupTimeInput)?.reportValidity();
       return;
     }
     if (!checkoutForm.checkValidity()) {
@@ -151,8 +141,6 @@ if (checkoutForm) {
     setCheckoutMessage("", "");
 
     try {
-      submitButton.textContent = "Connecting...";
-      await waitForOrderService();
       submitButton.textContent = "Sending...";
       const response = await fetch("/api/orders", {
         method: "POST",
@@ -168,7 +156,7 @@ if (checkoutForm) {
       cart = [];
       renderCheckoutOrder();
       checkoutForm.reset();
-      if (pickupDateInput) pickupDateInput.min = localDateValue(new Date());
+      if (pickupDateInput) pickupDateInput.min = hobartDateTimeParts().date;
       updateCutleryField();
       const successMessage = result.receiptSent === false
         ? "Thank you. Your order has been sent to Argyle Pantry."
@@ -176,7 +164,7 @@ if (checkoutForm) {
       setCheckoutMessage(successMessage, "success");
     } catch (error) {
       const message = error instanceof TypeError
-        ? "The order service is taking longer than expected to start. Please wait a moment and try again."
+        ? "The order service could not be reached. Please check your connection and try again."
         : error.message;
       setCheckoutMessage(message, "error");
     } finally {
@@ -186,23 +174,60 @@ if (checkoutForm) {
   });
 }
 
-waitForOrderService().catch(() => {});
-
-function localDateValue(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
 function isSaturday(dateValue) {
   const [year, month, day] = String(dateValue).split("-").map(Number);
   return Boolean(year && month && day) && new Date(year, month - 1, day).getDay() === 6;
 }
 
-function validateOpenDate(input) {
-  input.setCustomValidity(isSaturday(input.value) ? "Argyle Pantry is closed on Saturdays. Please choose another day." : "");
-  return input.checkValidity();
+function validatePickupDateTime(dateInput, timeInput) {
+  if (!dateInput || !timeInput) return true;
+
+  dateInput.setCustomValidity("");
+  timeInput.setCustomValidity("");
+
+  if (isSaturday(dateInput.value)) {
+    dateInput.setCustomValidity("Argyle Pantry is closed on Saturdays. Please choose another day.");
+  } else if (dateInput.value && dateInput.value < hobartDateTimeParts().date) {
+    dateInput.setCustomValidity("Please choose today or a future pickup date.");
+  }
+
+  if (dateInput.checkValidity() && dateInput.value && timeInput.value && !hasMinimumPickupNotice(dateInput.value, timeInput.value)) {
+    timeInput.setCustomValidity(MIN_PICKUP_NOTICE_MESSAGE);
+  }
+
+  return dateInput.checkValidity() && timeInput.checkValidity();
+}
+
+function hasMinimumPickupNotice(dateValue, timeValue) {
+  const now = hobartDateTimeParts();
+  if (dateValue > now.date) return true;
+  if (dateValue < now.date) return false;
+  return timeToMinutes(timeValue) >= now.minutes + MIN_PICKUP_NOTICE_MINUTES;
+}
+
+function hobartDateTimeParts() {
+  const parts = new Intl.DateTimeFormat("en-AU", {
+    timeZone: "Australia/Hobart",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(new Date()).reduce((values, part) => {
+    values[part.type] = part.value;
+    return values;
+  }, {});
+
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    minutes: Number(parts.hour) * 60 + Number(parts.minute)
+  };
+}
+
+function timeToMinutes(value) {
+  const [hours, minutes] = String(value).split(":").map(Number);
+  return hours * 60 + minutes;
 }
 
 renderCheckoutOrder();
