@@ -2,6 +2,8 @@ const EMAIL_TO_DEFAULT = "cyrolones@gmail.com";
 const FROM_DEFAULT = "Argyle Pantry <orders@argylepantry.com.au>";
 const TRADING_OPEN = "11:30";
 const TRADING_CLOSE = "20:30";
+const MIN_PICKUP_NOTICE_MINUTES = 15;
+const MIN_PICKUP_NOTICE_MESSAGE = "Please choose a pickup time at least 15 minutes from now. We need at least 15 minutes to prepare your food, and during busy periods it may take a little longer. We will prepare your order as quickly as we can.";
 
 export default {
   async fetch(request, env) {
@@ -200,6 +202,10 @@ function validateOrder(order) {
   if (order.customer.pickupDate && !isValidDateValue(order.customer.pickupDate)) errors.push("Please choose a valid pickup date.");
   if (order.customer.pickupTime && !isWithinTradingHours(order.customer.pickupTime)) errors.push(`Pickup time must be between ${TRADING_OPEN} and ${TRADING_CLOSE}.`);
   if (order.customer.pickupDate && isSaturday(order.customer.pickupDate)) errors.push("Argyle Pantry is closed on Saturdays. Please choose another pickup date.");
+  if (order.customer.pickupDate && order.customer.pickupDate < hobartDateTimeParts().date) errors.push("Please choose today or a future pickup date.");
+  if (order.customer.pickupDate && order.customer.pickupTime && !hasMinimumPickupNotice(order.customer.pickupDate, order.customer.pickupTime)) {
+    errors.push(MIN_PICKUP_NOTICE_MESSAGE);
+  }
   if (order.customer.cutleryNeeded && (!Number.isInteger(order.customer.cutleryCount) || order.customer.cutleryCount < 1 || order.customer.cutleryCount > 50)) {
     errors.push("Please choose between 1 and 50 cutlery sets.");
   }
@@ -474,6 +480,38 @@ function isSaturday(value) {
 
 function isWithinTradingHours(value) {
   return /^\d{2}:\d{2}$/.test(value) && value >= TRADING_OPEN && value <= TRADING_CLOSE;
+}
+
+function hasMinimumPickupNotice(dateValue, timeValue) {
+  const now = hobartDateTimeParts();
+  if (dateValue > now.date) return true;
+  if (dateValue < now.date) return false;
+  return timeToMinutes(timeValue) >= now.minutes + MIN_PICKUP_NOTICE_MINUTES;
+}
+
+function hobartDateTimeParts() {
+  const parts = new Intl.DateTimeFormat("en-AU", {
+    timeZone: "Australia/Hobart",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(new Date()).reduce((values, part) => {
+    values[part.type] = part.value;
+    return values;
+  }, {});
+
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    minutes: Number(parts.hour) * 60 + Number(parts.minute)
+  };
+}
+
+function timeToMinutes(value) {
+  const [hours, minutes] = String(value).split(":").map(Number);
+  return hours * 60 + minutes;
 }
 
 function hobartNow() {
