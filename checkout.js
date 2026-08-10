@@ -9,6 +9,10 @@ const TRADING_OPEN = "11:30";
 const TRADING_CLOSE = "20:30";
 const MIN_PICKUP_NOTICE_MINUTES = 15;
 const MIN_PICKUP_NOTICE_MESSAGE = "Please choose a pickup time at least 15 minutes from now. We need at least 15 minutes to prepare your food, and during busy periods it may take a little longer. We will prepare your order as quickly as we can.";
+const SPECIAL_TRADING_DAYS = {
+  "2026-08-14": { close: "18:00", message: "Argyle Pantry closes at 6:00pm on Friday 14 August 2026. Please choose a pickup time between 11:30am and 6:00pm." },
+  "2026-08-16": { closed: true, message: "Argyle Pantry is closed on Sunday 16 August 2026. Please choose another pickup date." }
+};
 
 let cart = loadCart();
 
@@ -100,11 +104,13 @@ if (checkoutForm) {
 
   if (pickupDateInput) {
     pickupDateInput.min = hobartDateTimeParts().date;
-    pickupDateInput.addEventListener("change", () => validatePickupDateTime(pickupDateInput, pickupTimeInput));
+    pickupDateInput.addEventListener("change", () => {
+      updatePickupTimeBounds(pickupDateInput, pickupTimeInput);
+      validatePickupDateTime(pickupDateInput, pickupTimeInput);
+    });
   }
   if (pickupTimeInput) {
-    pickupTimeInput.min = TRADING_OPEN;
-    pickupTimeInput.max = TRADING_CLOSE;
+    updatePickupTimeBounds(pickupDateInput, pickupTimeInput);
     pickupTimeInput.addEventListener("input", () => validatePickupDateTime(pickupDateInput, pickupTimeInput));
     pickupTimeInput.addEventListener("change", () => validatePickupDateTime(pickupDateInput, pickupTimeInput));
   }
@@ -185,11 +191,17 @@ function validatePickupDateTime(dateInput, timeInput) {
 
   dateInput.setCustomValidity("");
   timeInput.setCustomValidity("");
+  updatePickupTimeBounds(dateInput, timeInput);
+  const schedule = tradingScheduleForDate(dateInput.value);
 
-  if (isSaturday(dateInput.value)) {
-    dateInput.setCustomValidity("Argyle Pantry is closed on Saturdays. Please choose another day.");
+  if (schedule.closed) {
+    dateInput.setCustomValidity(schedule.message);
   } else if (dateInput.value && dateInput.value < hobartDateTimeParts().date) {
     dateInput.setCustomValidity("Please choose today or a future pickup date.");
+  }
+
+  if (dateInput.checkValidity() && timeInput.value && !isWithinTradingHoursForDate(dateInput.value, timeInput.value)) {
+    timeInput.setCustomValidity(`Pickup time must be between ${formatTime(schedule.open)} and ${formatTime(schedule.close)}.`);
   }
 
   if (dateInput.checkValidity() && dateInput.value && timeInput.value && !hasMinimumPickupNotice(dateInput.value, timeInput.value)) {
@@ -229,6 +241,39 @@ function hobartDateTimeParts() {
 function timeToMinutes(value) {
   const [hours, minutes] = String(value).split(":").map(Number);
   return hours * 60 + minutes;
+}
+
+function updatePickupTimeBounds(dateInput, timeInput) {
+  if (!timeInput) return;
+  const schedule = tradingScheduleForDate(dateInput?.value || "");
+  timeInput.min = schedule.open;
+  timeInput.max = schedule.close;
+}
+
+function tradingScheduleForDate(dateValue) {
+  const special = SPECIAL_TRADING_DAYS[dateValue];
+  if (special?.closed) return { open: TRADING_OPEN, close: TRADING_CLOSE, closed: true, message: special.message };
+  if (isSaturday(dateValue)) {
+    return { open: TRADING_OPEN, close: TRADING_CLOSE, closed: true, message: "Argyle Pantry is closed on Saturdays. Please choose another day." };
+  }
+  return {
+    open: TRADING_OPEN,
+    close: special?.close || TRADING_CLOSE,
+    closed: false,
+    message: special?.message || ""
+  };
+}
+
+function isWithinTradingHoursForDate(dateValue, timeValue) {
+  const schedule = tradingScheduleForDate(dateValue);
+  return !schedule.closed && /^\d{2}:\d{2}$/.test(timeValue) && timeValue >= schedule.open && timeValue <= schedule.close;
+}
+
+function formatTime(value) {
+  const [hours, minutes] = String(value).split(":").map(Number);
+  const suffix = hours >= 12 ? "pm" : "am";
+  const displayHour = hours % 12 || 12;
+  return minutes ? `${displayHour}:${String(minutes).padStart(2, "0")}${suffix}` : `${displayHour}${suffix}`;
 }
 
 function saveSubmissionSummary(summary) {

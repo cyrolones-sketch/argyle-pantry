@@ -2,6 +2,10 @@ const reservationForm = document.querySelector("#reservationForm");
 const reservationMessage = document.querySelector("#reservationMessage");
 const TRADING_OPEN = "11:30";
 const TRADING_CLOSE = "20:30";
+const SPECIAL_TRADING_DAYS = {
+  "2026-08-14": { close: "18:00", message: "Argyle Pantry closes at 6:00pm on Friday 14 August 2026. Please choose a reservation time between 11:30am and 6:00pm." },
+  "2026-08-16": { closed: true, message: "Argyle Pantry is closed on Sunday 16 August 2026. Please choose another reservation date." }
+};
 
 function setReservationMessage(text, type = "") {
   if (!reservationMessage) return;
@@ -27,17 +31,21 @@ if (reservationForm) {
   const timeInput = reservationForm.querySelector('input[name="time"]');
   if (dateInput) {
     dateInput.min = localDateValue(new Date());
-    dateInput.addEventListener("change", () => validateOpenDate(dateInput));
+    dateInput.addEventListener("change", () => {
+      updateReservationTimeBounds(dateInput, timeInput);
+      validateReservationDateTime(dateInput, timeInput);
+    });
   }
   if (timeInput) {
-    timeInput.min = TRADING_OPEN;
-    timeInput.max = TRADING_CLOSE;
+    updateReservationTimeBounds(dateInput, timeInput);
+    timeInput.addEventListener("input", () => validateReservationDateTime(dateInput, timeInput));
+    timeInput.addEventListener("change", () => validateReservationDateTime(dateInput, timeInput));
   }
 
   reservationForm.addEventListener("submit", async (event) => {
     event.preventDefault();
-    if (dateInput && !validateOpenDate(dateInput)) {
-      dateInput.reportValidity();
+    if (!validateReservationDateTime(dateInput, timeInput)) {
+      (dateInput && !dateInput.checkValidity() ? dateInput : timeInput)?.reportValidity();
       return;
     }
     if (!reservationForm.checkValidity()) {
@@ -101,8 +109,60 @@ function isSaturday(dateValue) {
 }
 
 function validateOpenDate(input) {
-  input.setCustomValidity(isSaturday(input.value) ? "Argyle Pantry is closed on Saturdays. Please choose another day." : "");
+  input.setCustomValidity(tradingScheduleForDate(input.value).closed ? tradingScheduleForDate(input.value).message : "");
   return input.checkValidity();
+}
+
+function validateReservationDateTime(dateInput, timeInput) {
+  if (!dateInput || !timeInput) return true;
+
+  dateInput.setCustomValidity("");
+  timeInput.setCustomValidity("");
+  updateReservationTimeBounds(dateInput, timeInput);
+  const schedule = tradingScheduleForDate(dateInput.value);
+
+  if (schedule.closed) {
+    dateInput.setCustomValidity(schedule.message);
+  }
+
+  if (dateInput.checkValidity() && timeInput.value && !isWithinTradingHoursForDate(dateInput.value, timeInput.value)) {
+    timeInput.setCustomValidity(`Reservation time must be between ${formatTime(schedule.open)} and ${formatTime(schedule.close)}.`);
+  }
+
+  return dateInput.checkValidity() && timeInput.checkValidity();
+}
+
+function updateReservationTimeBounds(dateInput, timeInput) {
+  if (!timeInput) return;
+  const schedule = tradingScheduleForDate(dateInput?.value || "");
+  timeInput.min = schedule.open;
+  timeInput.max = schedule.close;
+}
+
+function tradingScheduleForDate(dateValue) {
+  const special = SPECIAL_TRADING_DAYS[dateValue];
+  if (special?.closed) return { open: TRADING_OPEN, close: TRADING_CLOSE, closed: true, message: special.message };
+  if (isSaturday(dateValue)) {
+    return { open: TRADING_OPEN, close: TRADING_CLOSE, closed: true, message: "Argyle Pantry is closed on Saturdays. Please choose another day." };
+  }
+  return {
+    open: TRADING_OPEN,
+    close: special?.close || TRADING_CLOSE,
+    closed: false,
+    message: special?.message || ""
+  };
+}
+
+function isWithinTradingHoursForDate(dateValue, timeValue) {
+  const schedule = tradingScheduleForDate(dateValue);
+  return !schedule.closed && /^\d{2}:\d{2}$/.test(timeValue) && timeValue >= schedule.open && timeValue <= schedule.close;
+}
+
+function formatTime(value) {
+  const [hours, minutes] = String(value).split(":").map(Number);
+  const suffix = hours >= 12 ? "pm" : "am";
+  const displayHour = hours % 12 || 12;
+  return minutes ? `${displayHour}:${String(minutes).padStart(2, "0")}${suffix}` : `${displayHour}${suffix}`;
 }
 
 function saveSubmissionSummary(summary) {

@@ -4,6 +4,10 @@ const TRADING_OPEN = "11:30";
 const TRADING_CLOSE = "20:30";
 const MIN_PICKUP_NOTICE_MINUTES = 15;
 const MIN_PICKUP_NOTICE_MESSAGE = "Please choose a pickup time at least 15 minutes from now. We need at least 15 minutes to prepare your food, and during busy periods it may take a little longer. We will prepare your order as quickly as we can.";
+const SPECIAL_TRADING_DAYS = {
+  "2026-08-14": { close: "18:00", message: "Argyle Pantry closes at 6:00pm on Friday 14 August 2026." },
+  "2026-08-16": { closed: true, message: "Argyle Pantry is closed on Sunday 16 August 2026. Please choose another date." }
+};
 
 export default {
   async fetch(request, env) {
@@ -177,8 +181,11 @@ function validateReservation(reservation) {
 
   if (reservation.email && !isValidEmail(reservation.email)) errors.push("Please enter a valid email address.");
   if (reservation.date && !isValidDateValue(reservation.date)) errors.push("Please choose a valid reservation date.");
-  if (reservation.time && !isWithinTradingHours(reservation.time)) errors.push(`Reservation time must be between ${TRADING_OPEN} and ${TRADING_CLOSE}.`);
-  if (reservation.date && isSaturday(reservation.date)) errors.push("Argyle Pantry is closed on Saturdays. Please choose another reservation date.");
+  if (reservation.date && isClosedDate(reservation.date)) errors.push(closedDateMessage(reservation.date, "reservation"));
+  if (reservation.date && reservation.time && !isClosedDate(reservation.date) && !isWithinTradingHoursForDate(reservation.date, reservation.time)) {
+    const schedule = tradingScheduleForDate(reservation.date);
+    errors.push(`Reservation time must be between ${formatTime(schedule.open)} and ${formatTime(schedule.close)}.`);
+  }
   if (reservation.guests && (!Number.isInteger(Number(reservation.guests)) || Number(reservation.guests) < 1)) errors.push("Guests must be at least 1.");
 
   return errors;
@@ -200,8 +207,11 @@ function validateOrder(order) {
   if (!["Dine in", "Takeaway"].includes(order.customer.serviceType)) errors.push("Please choose dine in or takeaway.");
   if (order.customer.email && !isValidEmail(order.customer.email)) errors.push("Please enter a valid email address.");
   if (order.customer.pickupDate && !isValidDateValue(order.customer.pickupDate)) errors.push("Please choose a valid pickup date.");
-  if (order.customer.pickupTime && !isWithinTradingHours(order.customer.pickupTime)) errors.push(`Pickup time must be between ${TRADING_OPEN} and ${TRADING_CLOSE}.`);
-  if (order.customer.pickupDate && isSaturday(order.customer.pickupDate)) errors.push("Argyle Pantry is closed on Saturdays. Please choose another pickup date.");
+  if (order.customer.pickupDate && isClosedDate(order.customer.pickupDate)) errors.push(closedDateMessage(order.customer.pickupDate, "pickup"));
+  if (order.customer.pickupDate && order.customer.pickupTime && !isClosedDate(order.customer.pickupDate) && !isWithinTradingHoursForDate(order.customer.pickupDate, order.customer.pickupTime)) {
+    const schedule = tradingScheduleForDate(order.customer.pickupDate);
+    errors.push(`Pickup time must be between ${formatTime(schedule.open)} and ${formatTime(schedule.close)}.`);
+  }
   if (order.customer.pickupDate && order.customer.pickupDate < hobartDateTimeParts().date) errors.push("Please choose today or a future pickup date.");
   if (order.customer.pickupDate && order.customer.pickupTime && !hasMinimumPickupNotice(order.customer.pickupDate, order.customer.pickupTime)) {
     errors.push(MIN_PICKUP_NOTICE_MESSAGE);
@@ -478,8 +488,33 @@ function isSaturday(value) {
   return Boolean(year && month && day) && new Date(year, month - 1, day).getDay() === 6;
 }
 
-function isWithinTradingHours(value) {
-  return /^\d{2}:\d{2}$/.test(value) && value >= TRADING_OPEN && value <= TRADING_CLOSE;
+function isClosedDate(dateValue) {
+  return tradingScheduleForDate(dateValue).closed;
+}
+
+function closedDateMessage(dateValue, type) {
+  const schedule = tradingScheduleForDate(dateValue);
+  if (schedule.message) return schedule.message;
+  return `Argyle Pantry is closed on Saturdays. Please choose another ${type} date.`;
+}
+
+function tradingScheduleForDate(dateValue) {
+  const special = SPECIAL_TRADING_DAYS[dateValue];
+  if (special?.closed) return { open: TRADING_OPEN, close: TRADING_CLOSE, closed: true, message: special.message };
+  if (isSaturday(dateValue)) return { open: TRADING_OPEN, close: TRADING_CLOSE, closed: true, message: "" };
+  return { open: TRADING_OPEN, close: special?.close || TRADING_CLOSE, closed: false, message: special?.message || "" };
+}
+
+function isWithinTradingHoursForDate(dateValue, timeValue) {
+  const schedule = tradingScheduleForDate(dateValue);
+  return !schedule.closed && /^\d{2}:\d{2}$/.test(timeValue) && timeValue >= schedule.open && timeValue <= schedule.close;
+}
+
+function formatTime(value) {
+  const [hours, minutes] = String(value).split(":").map(Number);
+  const suffix = hours >= 12 ? "pm" : "am";
+  const displayHour = hours % 12 || 12;
+  return minutes ? `${displayHour}:${String(minutes).padStart(2, "0")}${suffix}` : `${displayHour}${suffix}`;
 }
 
 function hasMinimumPickupNotice(dateValue, timeValue) {

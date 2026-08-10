@@ -18,6 +18,12 @@ const SMTP_FROM = process.env.SMTP_FROM || process.env.EMAIL_FROM || "";
 const DRY_RUN = process.env.RESERVATION_DRY_RUN === "true";
 const TRADING_OPEN = "11:30";
 const TRADING_CLOSE = "20:30";
+const MIN_PICKUP_NOTICE_MINUTES = 15;
+const MIN_PICKUP_NOTICE_MESSAGE = "Please choose a pickup time at least 15 minutes from now. We need at least 15 minutes to prepare your food, and during busy periods it may take a little longer. We will prepare your order as quickly as we can.";
+const SPECIAL_TRADING_DAYS = {
+  "2026-08-14": { close: "18:00", message: "Argyle Pantry closes at 6:00pm on Friday 14 August 2026." },
+  "2026-08-16": { closed: true, message: "Argyle Pantry is closed on Sunday 16 August 2026. Please choose another date." }
+};
 
 const contentTypes = {
   ".css": "text/css; charset=utf-8",
@@ -235,12 +241,13 @@ function validateReservation(reservation) {
     errors.push("Please choose a valid reservation date.");
   }
 
-  if (reservation.time && !isWithinTradingHours(reservation.time)) {
-    errors.push(`Reservation time must be between ${TRADING_OPEN} and ${TRADING_CLOSE}.`);
+  if (reservation.date && isClosedDate(reservation.date)) {
+    errors.push(closedDateMessage(reservation.date, "reservation"));
   }
 
-  if (reservation.date && isSaturday(reservation.date)) {
-    errors.push("Argyle Pantry is closed on Saturdays. Please choose another reservation date.");
+  if (reservation.date && reservation.time && !isClosedDate(reservation.date) && !isWithinTradingHoursForDate(reservation.date, reservation.time)) {
+    const schedule = tradingScheduleForDate(reservation.date);
+    errors.push(`Reservation time must be between ${formatTime(schedule.open)} and ${formatTime(schedule.close)}.`);
   }
 
   if (reservation.guests && (!Number.isInteger(Number(reservation.guests)) || Number(reservation.guests) < 1)) {
@@ -302,13 +309,21 @@ function validateOrder(order) {
     errors.push("Please choose a valid pickup date.");
   }
 
-  if (order.customer.pickupTime && !isWithinTradingHours(order.customer.pickupTime)) {
-    errors.push(`Pickup time must be between ${TRADING_OPEN} and ${TRADING_CLOSE}.`);
+  if (order.customer.pickupDate && isClosedDate(order.customer.pickupDate)) {
+    errors.push(closedDateMessage(order.customer.pickupDate, "pickup"));
   }
 
+  if (order.customer.pickupDate && order.customer.pickupTime && !isClosedDate(order.customer.pickupDate) && !isWithinTradingHoursForDate(order.customer.pickupDate, order.customer.pickupTime)) {
+    const schedule = tradingScheduleForDate(order.customer.pickupDate);
+    errors.push(`Pickup time must be between ${formatTime(schedule.open)} and ${formatTime(schedule.close)}.`);
+  }
 
-  if (order.customer.pickupDate && isSaturday(order.customer.pickupDate)) {
-    errors.push("Argyle Pantry is closed on Saturdays. Please choose another pickup date.");
+  if (order.customer.pickupDate && order.customer.pickupDate < hobartDateTimeParts().date) {
+    errors.push("Please choose today or a future pickup date.");
+  }
+
+  if (order.customer.pickupDate && order.customer.pickupTime && !hasMinimumPickupNotice(order.customer.pickupDate, order.customer.pickupTime)) {
+    errors.push(MIN_PICKUP_NOTICE_MESSAGE);
   }
 
   if (order.customer.cutleryNeeded && (!Number.isInteger(order.customer.cutleryCount) || order.customer.cutleryCount < 1 || order.customer.cutleryCount > 50)) {
@@ -838,10 +853,53 @@ function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || ""));
 }
 
-function isWithinTradingHours(value) {
-  if (!/^\d{2}:\d{2}$/.test(String(value || ""))) return false;
-  const minutes = timeToMinutes(value);
-  return minutes >= timeToMinutes(TRADING_OPEN) && minutes <= timeToMinutes(TRADING_CLOSE);
+function isClosedDate(dateValue) {
+  return tradingScheduleForDate(dateValue).closed;
+}
+
+function closedDateMessage(dateValue, type) {
+  const schedule = tradingScheduleForDate(dateValue);
+  if (schedule.message) return schedule.message;
+  return `Argyle Pantry is closed on Saturdays. Please choose another ${type} date.`;
+}
+
+function tradingScheduleForDate(dateValue) {
+  const special = SPECIAL_TRADING_DAYS[dateValue];
+  if (special?.closed) return { open: TRADING_OPEN, close: TRADING_CLOSE, closed: true, message: special.message };
+  if (isSaturday(dateValue)) return { open: TRADING_OPEN, close: TRADING_CLOSE, closed: true, message: "" };
+  return { open: TRADING_OPEN, close: special?.close || TRADING_CLOSE, closed: false, message: special?.message || "" };
+}
+
+function isWithinTradingHoursForDate(dateValue, timeValue) {
+  const schedule = tradingScheduleForDate(dateValue);
+  return !schedule.closed && /^\d{2}:\d{2}$/.test(String(timeValue || "")) && timeValue >= schedule.open && timeValue <= schedule.close;
+}
+
+function hasMinimumPickupNotice(dateValue, timeValue) {
+  const now = hobartDateTimeParts();
+  if (dateValue > now.date) return true;
+  if (dateValue < now.date) return false;
+  return timeToMinutes(timeValue) >= now.minutes + MIN_PICKUP_NOTICE_MINUTES;
+}
+
+function hobartDateTimeParts() {
+  const parts = new Intl.DateTimeFormat("en-AU", {
+    timeZone: "Australia/Hobart",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23"
+  }).formatToParts(new Date()).reduce((values, part) => {
+    values[part.type] = part.value;
+    return values;
+  }, {});
+
+  return {
+    date: `${parts.year}-${parts.month}-${parts.day}`,
+    minutes: Number(parts.hour) * 60 + Number(parts.minute)
+  };
 }
 
 function isSaturday(value) {
@@ -862,6 +920,13 @@ function isValidDateValue(value) {
 function timeToMinutes(value) {
   const [hours, minutes] = String(value).split(":").map(Number);
   return hours * 60 + minutes;
+}
+
+function formatTime(value) {
+  const [hours, minutes] = String(value).split(":").map(Number);
+  const suffix = hours >= 12 ? "pm" : "am";
+  const displayHour = hours % 12 || 12;
+  return minutes ? `${displayHour}:${String(minutes).padStart(2, "0")}${suffix}` : `${displayHour}${suffix}`;
 }
 
 function extractEmail(value) {
