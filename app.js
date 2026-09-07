@@ -10,10 +10,11 @@ const orderEmpty = document.querySelector("#orderEmpty");
 const orderList = document.querySelector("#orderList");
 const orderMail = document.querySelector("#orderMail");
 const CART_STORAGE_KEY = "argylePantryCart";
+let feedbackTimer;
 
 const state = {
   activeCategory: new URLSearchParams(window.location.search).get("category") || "All",
-  search: "",
+  search: new URLSearchParams(window.location.search).get("q") || "",
   cart: loadCart()
 };
 
@@ -48,6 +49,7 @@ function renderCategoryFilters() {
     button.type = "button";
     button.dataset.category = category;
     button.textContent = category === "All" ? "All dishes" : category;
+    button.setAttribute("aria-pressed", String(category === state.activeCategory));
     if (category === state.activeCategory) button.classList.add("active");
     fragment.appendChild(button);
   });
@@ -57,15 +59,17 @@ function renderCategoryFilters() {
 
 function filteredItems() {
   return menuItems.filter((item) => {
-    const matchesCategory = state.activeCategory === "All" || item.category === state.activeCategory;
-    const matchesSearch = item.name.toLowerCase().includes(state.search.toLowerCase());
+    const matchesCategory = Boolean(state.search) || state.activeCategory === "All" || item.category === state.activeCategory;
+    const aliases = `${item.name} ${item.category} ${descriptionFor(item)} ${item.variants?.map(v => v.label).join(" ") || ""}`.toLowerCase();
+    const query = state.search.toLowerCase().replace(/gyoza|dumpling(s)?/g, "gyoza").replace(/soda/g, "soft drink");
+    const matchesSearch = query.split(/\s+/).every(word => aliases.includes(word));
     return matchesCategory && matchesSearch;
   });
 }
 
 function renderMenu() {
   const items = filteredItems();
-  activeCategoryLabel.textContent = state.activeCategory === "All" ? "All dishes" : state.activeCategory;
+  activeCategoryLabel.textContent = state.search ? "Search results" : state.activeCategory === "All" ? "All dishes" : state.activeCategory;
   resultCount.textContent = `${items.length} ${items.length === 1 ? "item" : "items"}`;
 
   const fragment = document.createDocumentFragment();
@@ -78,6 +82,15 @@ function renderMenu() {
     image.src = getDefaultImage(item);
     image.alt = item.name;
     image.loading = "lazy";
+    image.decoding = "async";
+    image.width = 640;
+    image.height = 480;
+    const imageButton = document.createElement("button");
+    imageButton.type = "button";
+    imageButton.className = "dish-image-button";
+    imageButton.setAttribute("aria-label", `View ${item.name}`);
+    imageButton.append(image);
+    imageButton.addEventListener("click", () => showDish(item, image.src));
 
     const body = document.createElement("div");
     body.className = "menu-card-body";
@@ -106,6 +119,9 @@ function renderMenu() {
     button.addEventListener("click", () => {
       const variant = getSelectedVariant(card, item);
       addToCart(item, variant);
+      document.querySelector("#cartFeedback").textContent = `${item.name} added to your order.`;
+      clearTimeout(feedbackTimer);
+      feedbackTimer = setTimeout(() => { document.querySelector("#cartFeedback").textContent = ""; }, 2500);
     });
 
     if (variantGroup) {
@@ -114,14 +130,34 @@ function renderMenu() {
       footer.append(price, button);
     }
     body.append(meta, title);
+    const description = descriptionFor(item);
+    if (description) {
+      const text = document.createElement("p");
+      text.className = "dish-description";
+      text.textContent = description;
+      body.append(text);
+    }
     if (variantGroup) body.append(variantGroup);
     body.append(footer);
-    card.append(image, body);
+    card.append(imageButton, body);
     wireVariantImageSwap(card, item, image);
     fragment.appendChild(card);
   });
 
   menuGrid.replaceChildren(fragment);
+  if (!items.length) {
+    const empty = document.createElement("div");
+    empty.className = "menu-empty";
+    const text = document.createElement("p");
+    text.textContent = `No dishes found for "${state.search}".`;
+    const reset = document.createElement("button");
+    reset.type = "button";
+    reset.className = "button secondary";
+    reset.textContent = "See all dishes";
+    reset.addEventListener("click", () => { state.search = ""; state.activeCategory = "All"; searchInput.value = ""; updateNavigation(); });
+    empty.append(text, reset);
+    menuGrid.append(empty);
+  }
 }
 
 function getPriceLabel(item) {
@@ -130,11 +166,16 @@ function getPriceLabel(item) {
 }
 
 function getDefaultImage(item) {
-  return item.variants?.[0]?.image || item.image;
+  return optimizedImage(item.variants?.[0]?.image || item.image);
+}
+
+function optimizedImage(source) {
+  const base = globalThis.optimizedImages?.[source.split("?")[0]];
+  return base ? `${base}-640.webp` : source;
 }
 
 function getVariantImage(item, label) {
-  return item.variants?.find((variant) => variant.label === label)?.image || item.image;
+  return optimizedImage(item.variants?.find((variant) => variant.label === label)?.image || item.image);
 }
 
 function wireVariantImageSwap(card, item, image) {
@@ -155,7 +196,7 @@ function createVariantGroup(item) {
   fieldset.className = "variant-options";
 
   const legend = document.createElement("legend");
-  legend.textContent = "Style";
+  legend.textContent = item.category === "Gyoza" ? "Filling" : item.category === "Drinks" ? "Flavour" : item.category === "Sushi" ? "Size" : item.category === "Donburi & Curry" ? "Rice style" : "Choice";
   fieldset.appendChild(legend);
 
   const groupName = `variant-${item.name.replace(/[^a-z0-9]+/gi, "-").toLowerCase()}`;
@@ -187,7 +228,7 @@ function addToCart(item, variant = null) {
   const id = `${item.name}::${variant?.label || "default"}`;
   const existing = state.cart.find((cartItem) => cartItem.id === id);
   if (existing) {
-    existing.quantity += 1;
+    existing.quantity = Math.min(50, existing.quantity + 1);
   } else {
     state.cart.push({ ...item, id, displayName, price, image: variant?.image || item.image, variant: variant?.label || "", quantity: 1 });
   }
@@ -197,7 +238,7 @@ function addToCart(item, variant = null) {
 function changeQuantity(id, delta) {
   const existing = state.cart.find((item) => item.id === id);
   if (!existing) return;
-  existing.quantity += delta;
+  existing.quantity = Math.min(50, existing.quantity + delta);
   if (existing.quantity <= 0) {
     state.cart = state.cart.filter((item) => item.id !== id);
   }
@@ -208,6 +249,11 @@ function renderOrder() {
   const totalItems = state.cart.reduce((sum, item) => sum + item.quantity, 0);
   cartCount.textContent = String(totalItems);
   orderItemCount.textContent = `${totalItems} ${totalItems === 1 ? "item" : "items"}`;
+  const total = Pantry.money(Pantry.total(state.cart));
+  document.querySelector("#orderTotal").textContent = total;
+  document.querySelector("#mobileCartLabel").textContent = `View order (${totalItems})`;
+  document.querySelector("#mobileCartTotal").textContent = total;
+  document.querySelector("#mobileCart").hidden = !state.cart.length;
   orderEmpty.hidden = state.cart.length > 0;
   orderMail.classList.toggle("disabled", state.cart.length === 0);
   orderMail.setAttribute("aria-disabled", String(state.cart.length === 0));
@@ -254,37 +300,72 @@ function renderOrder() {
 }
 
 function loadCart() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(CART_STORAGE_KEY) || "[]");
-    return Array.isArray(saved) ? saved.filter((item) => item && item.id && item.quantity > 0) : [];
-  } catch {
-    return [];
-  }
+  return Pantry.readCart();
 }
 
 function saveCart() {
-  localStorage.setItem(CART_STORAGE_KEY, JSON.stringify(state.cart));
+  Pantry.saveCart(state.cart);
 }
 
 categoryRail.addEventListener("click", (event) => {
   const button = event.target.closest("[data-category]");
   if (!button) return;
   state.activeCategory = button.dataset.category;
-  document.querySelectorAll(".category-filter").forEach((filter) => {
-    filter.classList.toggle("active", filter.dataset.category === state.activeCategory);
-  });
-  renderMenu();
+  state.search = "";
+  searchInput.value = "";
+  updateNavigation();
 });
 
 searchInput.addEventListener("input", (event) => {
   state.search = event.target.value;
-  renderMenu();
+  updateNavigation();
 });
 
 orderMail.addEventListener("click", (event) => {
   if (!state.cart.length) event.preventDefault();
 });
 
-renderCategoryFilters();
-renderMenu();
+function updateNavigation() {
+  const url = new URL(location.href);
+  url.searchParams.set("category", state.activeCategory);
+  if (state.search) url.searchParams.set("q", state.search); else url.searchParams.delete("q");
+  history.replaceState(null, "", url);
+  try { sessionStorage.setItem("argylePantryMenuURL", url.pathname + url.search); } catch {}
+  document.querySelector("#categorySelect").value = state.activeCategory;
+  renderCategoryFilters();
+  renderMenu();
+}
+
+function descriptionFor(item) {
+  const sushi = {
+    "Crispy Chicken Roll": "Crispy fried chicken.", "Chicken Katsu Roll": "Chicken katsu and cucumber.",
+    "Teriyaki Chicken Roll": "Teriyaki chicken and avocado.", "Spicy Chicken Roll": "Chicken katsu, cucumber and chilli sauce.",
+    "Crumbed Prawn Roll": "Crumbed prawn and cucumber.", "Spicy Prawn Roll": "Crumbed prawn, cucumber and chilli sauce.",
+    "Cooked Prawn Roll": "Cooked prawn and avocado.", "Cooked Tuna Roll": "Cooked tuna and avocado.",
+    "California Roll": "Crab stick and avocado.", "Salmon Avocado Roll": "Fresh salmon and avocado.",
+    "Teriyaki Salmon Roll": "Teriyaki salmon and avocado.", "Spicy Salmon Roll": "Fresh salmon, avocado and chilli sauce.",
+    "Avocado Roll": "Avocado.", "Vegetable Roll": "Inari tofu and cucumber."
+  };
+  return Object.entries(sushi).find(([name]) => name.toLowerCase() === item.name.toLowerCase())?.[1] || (item.category === "Gyoza" ? "Pan-fried dumplings. Choose chicken or pork." : "");
+}
+
+function showDish(item, src) {
+  const dialog = document.querySelector("#dishDialog");
+  dialog.querySelector("img").src = src.replace(/-640\.webp$/, "-1280.webp");
+  dialog.querySelector("img").alt = item.name;
+  dialog.querySelector("h2").textContent = item.name;
+  dialog.querySelector(".dialog-description").textContent = descriptionFor(item);
+  dialog.querySelector(".dialog-price").textContent = getPriceLabel(item);
+  dialog.showModal();
+}
+document.querySelector("#dishDialogClose").addEventListener("click", () => document.querySelector("#dishDialog").close());
+const categorySelect = document.querySelector("#categorySelect");
+uniqueCategories().forEach(category => categorySelect.add(new Option(category === "All" ? "All dishes" : category, category)));
+categorySelect.addEventListener("change", () => { state.activeCategory = categorySelect.value; state.search = ""; searchInput.value = ""; updateNavigation(); });
+if (!uniqueCategories().includes(state.activeCategory)) state.activeCategory = "All";
+categorySelect.value = state.activeCategory;
+searchInput.value = state.search;
+window.addEventListener("pageshow", () => { state.cart = loadCart(); renderOrder(); });
+window.addEventListener("storage", () => { state.cart = loadCart(); renderOrder(); });
+updateNavigation();
 renderOrder();

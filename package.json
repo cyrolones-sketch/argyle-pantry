@@ -1,5 +1,9 @@
 {
   "scripts": {
-    "start": "node server.js"
-  }
+    "start": "node server.js",
+    "test": "node --test tests/service.test.cjs",
+    "test:browser": "node tests/browser-check.cjs",
+    "optimize:images": "node scripts/optimize-images.cjs"
+  },
+  "engines": { "node": ">=22.13" }
 }

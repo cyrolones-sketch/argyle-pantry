@@ -1,287 +1,94 @@
-const CART_STORAGE_KEY = "argylePantryCart";
 const checkoutForm = document.querySelector("#checkoutForm");
-const checkoutOrderList = document.querySelector("#checkoutOrderList");
-const checkoutItemCount = document.querySelector("#checkoutItemCount");
-const checkoutEmpty = document.querySelector("#checkoutEmpty");
-const checkoutTotal = document.querySelector("#checkoutTotal");
 const checkoutMessage = document.querySelector("#checkoutMessage");
-const TRADING_OPEN = "11:30";
-const TRADING_CLOSE = "20:30";
-const MIN_PICKUP_NOTICE_MINUTES = 15;
-const MIN_PICKUP_NOTICE_MESSAGE = "Please choose a pickup time at least 15 minutes from now. We need at least 15 minutes to prepare your food, and during busy periods it may take a little longer. We will prepare your order as quickly as we can.";
-const SPECIAL_TRADING_DAYS = {
-  "2026-08-14": { close: "18:00", message: "Argyle Pantry closes at 6:00pm on Friday 14 August 2026. Please choose a pickup time between 11:30am and 6:00pm." },
-  "2026-08-16": { closed: true, message: "Argyle Pantry is closed on Sunday 16 August 2026. Please choose another pickup date." }
-};
-
-let cart = loadCart();
-
-function loadCart() {
-  try {
-    const saved = JSON.parse(localStorage.getItem(CART_STORAGE_KEY) || "[]");
-    return Array.isArray(saved) ? saved.filter((item) => item && item.id && item.quantity > 0) : [];
-  } catch {
-    return [];
-  }
-}
-
-function moneyValue(price) {
-  const value = Number(String(price || "").replace(/[^0-9.]/g, ""));
-  return Number.isFinite(value) ? value : 0;
-}
-
-function formatMoney(value) {
-  return `$${value.toFixed(2)}`;
-}
+let cart = Pantry.readCart();
+const firstContact = checkoutForm.elements.namedItem("name").closest("label");
+[checkoutForm.querySelector(".dining-options"), checkoutForm.elements.pickupDate.closest("label"), checkoutForm.elements.pickupTime.closest("label")].forEach(field => firstContact.before(field));
+const validateTime = setupBookingTime(checkoutForm, "order");
 
 function renderCheckoutOrder() {
-  const totalItems = cart.reduce((sum, item) => sum + item.quantity, 0);
-  const orderTotal = cart.reduce((sum, item) => sum + moneyValue(item.price) * item.quantity, 0);
-  checkoutItemCount.textContent = `${totalItems} ${totalItems === 1 ? "item" : "items"}`;
-  checkoutEmpty.hidden = cart.length > 0;
-  checkoutForm.hidden = cart.length === 0;
-  checkoutTotal.hidden = cart.length === 0;
-  checkoutTotal.textContent = `Estimated total ${formatMoney(orderTotal)}`;
-
-  const fragment = document.createDocumentFragment();
-  cart.forEach((item) => {
+  document.querySelector("#checkoutItemCount").textContent = `${cart.reduce((n, item) => n + item.quantity, 0)} items`;
+  document.querySelector("#checkoutEmpty").hidden = cart.length > 0;
+  checkoutForm.hidden = !cart.length;
+  const total = Pantry.money(Pantry.total(cart));
+  document.querySelector("#checkoutTotal").textContent = `Total (AUD) ${total}`;
+  document.querySelector("#checkoutTotal").hidden = !cart.length;
+  document.querySelector("#submitTotal").textContent = total;
+  const list = document.querySelector("#checkoutOrderList");
+  list.replaceChildren();
+  cart.forEach(item => {
     const row = document.createElement("li");
     row.className = "order-row";
-
     const details = document.createElement("div");
     const name = document.createElement("strong");
-    name.textContent = item.displayName || item.name;
-    const meta = document.createElement("span");
-    meta.textContent = `${item.category} · ${item.price}`;
-    details.append(name, meta);
-
-    const quantity = document.createElement("strong");
-    quantity.className = "checkout-line-quantity";
-    quantity.textContent = `x${item.quantity}`;
-    row.append(details, quantity);
-    fragment.appendChild(row);
-  });
-  checkoutOrderList.replaceChildren(fragment);
-}
-
-function checkoutPayload(form) {
-  const data = new FormData(form);
-  return {
-    customer: {
-      name: String(data.get("name") || "").trim(),
-      phone: String(data.get("phone") || "").trim(),
-      email: String(data.get("email") || "").trim(),
-      pickupDate: String(data.get("pickupDate") || "").trim(),
-      pickupTime: String(data.get("pickupTime") || "").trim(),
-      serviceType: String(data.get("serviceType") || "").trim(),
-      cutleryNeeded: data.get("cutleryNeeded") === "Yes",
-      cutleryCount: data.get("cutleryNeeded") === "Yes" ? Number(data.get("cutleryCount") || 0) : 0,
-      notes: String(data.get("notes") || "").trim()
-    },
-    items: cart.map((item) => ({
-      id: item.id,
-      name: item.name,
-      displayName: item.displayName || item.name,
-      category: item.category,
-      variant: item.variant || "",
-      price: item.price,
-      quantity: item.quantity
-    }))
-  };
-}
-
-function setCheckoutMessage(text, type = "") {
-  checkoutMessage.textContent = text;
-  checkoutMessage.dataset.type = type;
-}
-
-if (checkoutForm) {
-  const pickupDateInput = checkoutForm.querySelector('input[name="pickupDate"]');
-  const pickupTimeInput = checkoutForm.querySelector('input[name="pickupTime"]');
-  const cutleryChoices = checkoutForm.querySelectorAll('input[name="cutleryNeeded"]');
-  const cutleryCountField = checkoutForm.querySelector("#cutleryCountField");
-  const cutleryCountInput = checkoutForm.querySelector('input[name="cutleryCount"]');
-
-  if (pickupDateInput) {
-    pickupDateInput.min = hobartDateTimeParts().date;
-    pickupDateInput.addEventListener("change", () => {
-      updatePickupTimeBounds(pickupDateInput, pickupTimeInput);
-      validatePickupDateTime(pickupDateInput, pickupTimeInput);
-    });
-  }
-  if (pickupTimeInput) {
-    updatePickupTimeBounds(pickupDateInput, pickupTimeInput);
-    pickupTimeInput.addEventListener("input", () => validatePickupDateTime(pickupDateInput, pickupTimeInput));
-    pickupTimeInput.addEventListener("change", () => validatePickupDateTime(pickupDateInput, pickupTimeInput));
-  }
-
-  const updateCutleryField = () => {
-    const needsCutlery = checkoutForm.querySelector('input[name="cutleryNeeded"]:checked')?.value === "Yes";
-    cutleryCountField.hidden = !needsCutlery;
-    cutleryCountInput.disabled = !needsCutlery;
-    cutleryCountInput.required = needsCutlery;
-    if (!needsCutlery) cutleryCountInput.value = "";
-  };
-  cutleryChoices.forEach((choice) => choice.addEventListener("change", updateCutleryField));
-  updateCutleryField();
-
-  checkoutForm.addEventListener("submit", async (event) => {
-    event.preventDefault();
-    if (!cart.length) {
-      setCheckoutMessage("Please add dishes to your order first.", "error");
-      return;
-    }
-    if (!validatePickupDateTime(pickupDateInput, pickupTimeInput)) {
-      (pickupDateInput && !pickupDateInput.checkValidity() ? pickupDateInput : pickupTimeInput)?.reportValidity();
-      return;
-    }
-    if (!checkoutForm.checkValidity()) {
-      checkoutForm.reportValidity();
-      return;
-    }
-
-    const submitButton = checkoutForm.querySelector('button[type="submit"]');
-    const originalText = submitButton.textContent;
-    submitButton.disabled = true;
-    submitButton.textContent = "Sending...";
-    setCheckoutMessage("", "");
-
-    try {
-      submitButton.textContent = "Sending...";
-      const payload = checkoutPayload(checkoutForm);
-      const response = await fetch("/api/orders", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload)
-      });
-      const result = await response.json().catch(() => ({}));
-      if (!response.ok) {
-        throw new Error(result.message || "Order could not be sent. Please try again.");
+    name.textContent = item.displayName;
+    const price = document.createElement("span");
+    price.textContent = `${item.price} each`;
+    details.append(name, price);
+    const controls = document.createElement("div");
+    controls.className = "quantity-controls";
+    [-1, 0, 1].forEach(delta => {
+      const el = document.createElement(delta ? "button" : "span");
+      el.textContent = delta ? delta < 0 ? "-" : "+" : item.quantity;
+      if (delta) {
+        el.type = "button";
+        el.setAttribute("aria-label", `${delta < 0 ? "Remove" : "Add"} one ${item.displayName}`);
+        el.addEventListener("click", () => {
+          item.quantity = Math.min(50, item.quantity + delta);
+          cart = cart.filter(i => i.quantity > 0);
+          Pantry.saveCart(cart);
+          renderCheckoutOrder();
+        });
       }
-
-      saveSubmissionSummary({
-        type: "order",
-        customer: payload.customer,
-        items: payload.items,
-        total: formatMoney(payload.items.reduce((sum, item) => sum + moneyValue(item.price) * item.quantity, 0)),
-        receiptSent: result.receiptSent !== false,
-        submittedAt: new Date().toISOString()
-      });
-      localStorage.removeItem(CART_STORAGE_KEY);
-      window.location.href = "success.html?type=order";
-    } catch (error) {
-      const message = error instanceof TypeError
-        ? "The order service could not be reached. Please check your connection and try again."
-        : error.message;
-      setCheckoutMessage(message, "error");
-    } finally {
-      submitButton.disabled = false;
-      submitButton.textContent = originalText;
-    }
+      controls.append(el);
+    });
+    row.append(details, controls);
+    list.append(row);
   });
 }
-
-function isSaturday(dateValue) {
-  const [year, month, day] = String(dateValue).split("-").map(Number);
-  return Boolean(year && month && day) && new Date(year, month - 1, day).getDay() === 6;
+const countField = document.querySelector("#cutleryCountField");
+function updateCutlery() {
+  const needs = checkoutForm.elements.cutleryNeeded.value === "Yes";
+  countField.hidden = !needs;
+  checkoutForm.elements.cutleryCount.disabled = !needs;
+  checkoutForm.elements.cutleryCount.required = needs;
 }
-
-function validatePickupDateTime(dateInput, timeInput) {
-  if (!dateInput || !timeInput) return true;
-
-  dateInput.setCustomValidity("");
-  timeInput.setCustomValidity("");
-  updatePickupTimeBounds(dateInput, timeInput);
-  const schedule = tradingScheduleForDate(dateInput.value);
-
-  if (schedule.closed) {
-    dateInput.setCustomValidity(schedule.message);
-  } else if (dateInput.value && dateInput.value < hobartDateTimeParts().date) {
-    dateInput.setCustomValidity("Please choose today or a future pickup date.");
-  }
-
-  if (dateInput.checkValidity() && timeInput.value && !isWithinTradingHoursForDate(dateInput.value, timeInput.value)) {
-    timeInput.setCustomValidity(`Pickup time must be between ${formatTime(schedule.open)} and ${formatTime(schedule.close)}.`);
-  }
-
-  if (dateInput.checkValidity() && dateInput.value && timeInput.value && !hasMinimumPickupNotice(dateInput.value, timeInput.value)) {
-    timeInput.setCustomValidity(MIN_PICKUP_NOTICE_MESSAGE);
-  }
-
-  return dateInput.checkValidity() && timeInput.checkValidity();
-}
-
-function hasMinimumPickupNotice(dateValue, timeValue) {
-  const now = hobartDateTimeParts();
-  if (dateValue > now.date) return true;
-  if (dateValue < now.date) return false;
-  return timeToMinutes(timeValue) >= now.minutes + MIN_PICKUP_NOTICE_MINUTES;
-}
-
-function hobartDateTimeParts() {
-  const parts = new Intl.DateTimeFormat("en-AU", {
-    timeZone: "Australia/Hobart",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23"
-  }).formatToParts(new Date()).reduce((values, part) => {
-    values[part.type] = part.value;
-    return values;
-  }, {});
-
-  return {
-    date: `${parts.year}-${parts.month}-${parts.day}`,
-    minutes: Number(parts.hour) * 60 + Number(parts.minute)
-  };
-}
-
-function timeToMinutes(value) {
-  const [hours, minutes] = String(value).split(":").map(Number);
-  return hours * 60 + minutes;
-}
-
-function updatePickupTimeBounds(dateInput, timeInput) {
-  if (!timeInput) return;
-  const schedule = tradingScheduleForDate(dateInput?.value || "");
-  timeInput.min = schedule.open;
-  timeInput.max = schedule.close;
-}
-
-function tradingScheduleForDate(dateValue) {
-  const special = SPECIAL_TRADING_DAYS[dateValue];
-  if (special?.closed) return { open: TRADING_OPEN, close: TRADING_CLOSE, closed: true, message: special.message };
-  if (isSaturday(dateValue)) {
-    return { open: TRADING_OPEN, close: TRADING_CLOSE, closed: true, message: "Argyle Pantry is closed on Saturdays. Please choose another day." };
-  }
-  return {
-    open: TRADING_OPEN,
-    close: special?.close || TRADING_CLOSE,
-    closed: false,
-    message: special?.message || ""
-  };
-}
-
-function isWithinTradingHoursForDate(dateValue, timeValue) {
-  const schedule = tradingScheduleForDate(dateValue);
-  return !schedule.closed && /^\d{2}:\d{2}$/.test(timeValue) && timeValue >= schedule.open && timeValue <= schedule.close;
-}
-
-function formatTime(value) {
-  const [hours, minutes] = String(value).split(":").map(Number);
-  const suffix = hours >= 12 ? "pm" : "am";
-  const displayHour = hours % 12 || 12;
-  return minutes ? `${displayHour}:${String(minutes).padStart(2, "0")}${suffix}` : `${displayHour}${suffix}`;
-}
-
-function saveSubmissionSummary(summary) {
+checkoutForm.querySelectorAll('[name="cutleryNeeded"]').forEach(el => el.addEventListener("change", updateCutlery));
+updateCutlery();
+checkoutForm.addEventListener("submit", async event => {
+  event.preventDefault();
+  if (!cart.length || !validateTime() || !checkoutForm.reportValidity()) { checkoutForm.reportValidity(); return; }
+  const data = new FormData(checkoutForm);
+  const customer = Object.fromEntries(["name", "phone", "email", "pickupDate", "pickupTime", "serviceType", "notes"].map(key => [key, String(data.get(key) || "").trim()]));
+  customer.cutleryNeeded = data.get("cutleryNeeded") === "Yes";
+  customer.cutleryCount = customer.cutleryNeeded ? Number(data.get("cutleryCount")) : 0;
+  const payload = { customer, items: cart.map(({ id, name, variant, quantity }) => ({ id, name, variant, quantity })) };
+  const button = checkoutForm.querySelector('[type="submit"]');
+  button.disabled = true;
+  checkoutMessage.textContent = "Sending your order...";
+  checkoutMessage.dataset.type = "";
   try {
-    sessionStorage.setItem("argylePantrySubmission", JSON.stringify(summary));
-  } catch {
-    // The success page still has a fallback if session storage is unavailable.
-  }
-}
-
+    const response = await fetch("/api/orders", { method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": Pantry.submissionKey("order", payload) }, body: JSON.stringify(payload) });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok || !result.reference) throw new Error(result.message || "Your order could not be confirmed. Please try again or call 03 6288 7654.");
+    const summary = { type: "order", reference: result.reference, customer, items: result.items || cart,
+      total: result.total || Pantry.money(Pantry.total(cart)), receiptSent: result.receiptSent === true, submittedAt: new Date().toISOString() };
+    try { sessionStorage.setItem("argylePantrySubmission", JSON.stringify(summary)); sessionStorage.removeItem("argylePantryPending:order"); } catch {
+      checkoutMessage.textContent = `Order received. Reference ${result.reference}. Please keep this number. Call 03 6288 7654 for changes.`;
+      Pantry.saveCart([]);
+      button.hidden = true;
+      return;
+    }
+    Pantry.saveCart([]);
+    location.assign("success.html?type=order");
+  } catch (error) {
+    checkoutMessage.dataset.type = "error";
+    checkoutMessage.textContent = error instanceof TypeError ? "Connection interrupted. Please retry with the same details so we can check your request without duplicating it." : error.message;
+  } finally { button.disabled = false; }
+});
+try {
+  const saved = sessionStorage.getItem("argylePantryMenuURL");
+  if (saved && /^\/menu(?:\.html)?\?/.test(saved)) document.querySelector(".checkout-back").href = saved;
+} catch {}
+window.addEventListener("pageshow", () => { cart = Pantry.readCart(); renderCheckoutOrder(); });
+window.addEventListener("storage", () => { cart = Pantry.readCart(); renderCheckoutOrder(); });
 renderCheckoutOrder();

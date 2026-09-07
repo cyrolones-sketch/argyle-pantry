@@ -465,7 +465,7 @@ h3 {
   align-items: center;
   background:
     linear-gradient(rgba(36, 33, 30, 0.76), rgba(36, 33, 30, 0.76)),
-    url("新菜品图/寿司拼盘/2. Sushi Party Platter.jpg") center / cover;
+    url("assets/optimized/99bcfb3a2d395d6f-1280.webp") center / cover;
   color: white;
   display: grid;
   gap: 36px;
@@ -1434,7 +1434,7 @@ h3 {
 .success-page {
   background:
     linear-gradient(180deg, rgba(247, 243, 237, 0.92), rgba(255, 255, 255, 0.98)),
-    url("assets/hero-generated-brush.png") center / cover no-repeat;
+    url("assets/optimized/hero-generated-brush.webp") center / cover no-repeat;
   min-height: 74vh;
   padding: clamp(34px, 6vw, 72px) clamp(20px, 5vw, 72px) 86px;
 }

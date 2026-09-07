@@ -4,9 +4,12 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Menu | Argyle Pantry</title>
-    <link rel="stylesheet" href="styles.css?v=contact-us-1" />
+    <meta name="description" content="Explore Argyle Pantry's Japanese menu: bento, rice bowls, sushi, ramen, udon and sides. Order for pickup in central Hobart. Prices in Australian dollars." />
+    <link rel="canonical" href="https://argylepantry.com.au/menu.html" />
+    <link rel="stylesheet" href="styles.css?v=20260905" />
+    <link rel="stylesheet" href="experience.css?v=20260905" />
   </head>
-  <body>
+  <body class="menu-page">
     <header class="site-header">
       <a class="brand" href="index.html" aria-label="Argyle Pantry home">
         <img src="logo.png" alt="Argyle Pantry logo" />
@@ -32,12 +35,8 @@
     <main>
       <section class="menu-hero">
         <div>
-          <p class="service-line">Pickup from 15 min</p>
+          <p class="service-line"><span data-trading-status></span> · Pickup from 15 min</p>
           <h1>Menu</h1>
-          <p>
-            Browse bento, rice bowls, ramen, udon, sushi and sides.
-            Choose your favourites for pickup or easy online ordering.
-          </p>
         </div>
         <div class="menu-search">
           <label for="menuSearch">Search dishes</label>
@@ -46,9 +45,13 @@
       </section>
 
       <section class="menu-layout">
+        <div class="category-navigation">
+          <label class="category-select-label" for="categorySelect">Categories</label>
+          <select id="categorySelect" aria-label="Choose a menu category"></select>
         <aside class="category-rail" aria-label="Menu categories">
           <button class="category-filter active" type="button" data-category="All">All dishes</button>
         </aside>
+        </div>
 
         <section class="menu-results" aria-live="polite">
           <div class="menu-results-header">
@@ -70,8 +73,10 @@
             Choose dishes from the menu to start an order.
           </div>
           <ul class="order-list" id="orderList"></ul>
+          <div class="order-total"><span>Total (AUD)</span><strong id="orderTotal">$0.00</strong></div>
+          <p class="payment-note">Pay at the restaurant.</p>
           <a class="button primary order-mail" id="orderMail" href="checkout.html">
-            Submit order
+            Continue to checkout
           </a>
         </aside>
       </section>
@@ -85,7 +90,17 @@
       <p>Japanese fast casual meals, made fresh for takeaway and dine-in.</p>
     </footer>
 
-    <script src="menu-data.js?v=drinks-1"></script>
-    <script src="app.js?v=tiny-pickle-1"></script>
+    <a id="mobileCart" class="mobile-cart" href="#order" hidden><span id="mobileCartLabel">View order</span><strong id="mobileCartTotal">$0.00</strong></a>
+    <p id="cartFeedback" class="cart-feedback" role="status" aria-live="polite"></p>
+    <dialog id="dishDialog" class="dish-dialog" aria-labelledby="dishDialogTitle">
+      <button id="dishDialogClose" class="dialog-close" type="button" aria-label="Close dish details">×</button>
+      <img width="640" height="480" alt="" />
+      <h2 id="dishDialogTitle"></h2><p class="dialog-description"></p><p class="dialog-price"></p>
+      <p class="allergy-note">Food allergy? Please call <a href="tel:0362887654">03 6288 7654</a> before ordering.</p>
+    </dialog>
+    <script src="menu-data.js?v=20260905"></script>
+    <script src="image-map.js?v=20260905"></script>
+    <script src="storefront.js?v=20260905"></script>
+    <script src="app.js?v=20260905"></script>
   </body>
 </html>

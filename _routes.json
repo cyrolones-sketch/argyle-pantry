@@ -1,0 +1,18 @@
+{
+  "version": 1,
+  "include": ["/*"],
+  "exclude": [
+    "/assets/*",
+    "/logo.png",
+    "/styles.css",
+    "/experience.css",
+    "/app.js",
+    "/menu-data.js",
+    "/image-map.js",
+    "/storefront.js",
+    "/booking-ui.js",
+    "/checkout.js",
+    "/reservation.js",
+    "/success.js"
+  ]
+}

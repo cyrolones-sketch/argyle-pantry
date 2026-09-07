@@ -3,3 +3,7 @@ node_modules/
 .DS_Store
 .github-uploader.html
 .gh-config/
+reports/
+output/
+.wrangler/
+dist/

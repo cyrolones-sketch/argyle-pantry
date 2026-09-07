@@ -1,4 +1,4 @@
-window.menuItems = [
+globalThis.menuItems = [
   { category: "Chef Special Menu", name: "Pickled Mustard Greens & Shredded Pork Noodle Soup", image: "新菜品图/Chef special menu/雪菜肉丝面.png", price: "$17.50" },
   { category: "Chef Special Menu", name: "Shredded Pork & Green Pepper Rice Bowl", image: "新菜品图/Chef special menu/青椒肉丝面.png", price: "$17.80" },
   { category: "Chef Special Menu", name: "Yu Xiang Shredded Pork Rice Bowl", image: "新菜品图/Chef special menu/鱼香肉丝面.png", price: "$17.80" },

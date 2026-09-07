@@ -1,14 +1,8 @@
+import "./menu-data.js";
+import "./storefront.js";
+const Pantry = globalThis.Pantry;
 const EMAIL_TO_DEFAULT = "cyrolones@gmail.com";
 const FROM_DEFAULT = "Argyle Pantry <orders@argylepantry.com.au>";
-const TRADING_OPEN = "11:30";
-const TRADING_CLOSE = "20:30";
-const MIN_PICKUP_NOTICE_MINUTES = 15;
-const MIN_PICKUP_NOTICE_MESSAGE = "Please choose a pickup time at least 15 minutes from now. We need at least 15 minutes to prepare your food, and during busy periods it may take a little longer. We will prepare your order as quickly as we can.";
-const SPECIAL_TRADING_DAYS = {
-  "2026-08-14": { close: "18:00", message: "Argyle Pantry closes at 6:00pm on Friday 14 August 2026." },
-  "2026-08-16": { closed: true, message: "Argyle Pantry is closed on Sunday 16 August 2026. Please choose another date." }
-};
-
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
@@ -29,77 +23,78 @@ export default {
       return handleOrder(request, env);
     }
 
+    if (url.pathname.startsWith("/api/")) return jsonResponse(request, 404, { message: "Endpoint not found." });
+    if (!["GET", "HEAD"].includes(request.method)) return new Response("Method not allowed", { status: 405 });
+    let pathname;
+    try { pathname = decodeURIComponent(url.pathname); } catch { return new Response("Bad request", { status: 400 }); }
+    const pages = ["/", "/index", "/index.html", "/menu", "/menu.html", "/checkout", "/checkout.html", "/success", "/success.html", "/styles.css", "/experience.css", "/app.js", "/menu-data.js", "/storefront.js", "/booking-ui.js", "/checkout.js", "/reservation.js", "/success.js", "/logo.png", "/robots.txt", "/sitemap.xml"];
+    const asset = /^\/(assets|新菜品图)\/[^\\]*\.(png|jpe?g|webp|svg)$/i.test(pathname) && !pathname.split("/").includes("..");
+    if (!pages.includes(pathname) && pathname !== "/image-map.js" && !asset) return new Response("Not found", { status: 404 });
     return env.ASSETS.fetch(request);
   }
 };
 
 async function handleReservation(request, env) {
-  const reservation = normalizeReservation(await readJson(request));
-  const errors = validateReservation(reservation);
-
-  if (errors.length) {
-    return jsonResponse(request, 400, { message: errors[0], errors });
-  }
-
-  const ownerEmail = buildReservationEmail(reservation);
-  const customerEmail = buildReservationReceiptEmail(reservation);
-
-  try {
-    const receiptSent = await sendOwnerThenCustomerReceipt(env, {
-      from: senderAddress(env),
-      to: ownerAddress(env),
-      replyTo: reservation.email,
-      subject: ownerEmail.subject,
-      text: ownerEmail.text,
-      html: ownerEmail.html
-    }, {
-      from: senderAddress(env),
-      to: reservation.email,
-      replyTo: ownerAddress(env),
-      subject: customerEmail.subject,
-      text: customerEmail.text,
-      html: customerEmail.html
-    });
-
-    return jsonResponse(request, 200, { message: "Reservation request sent.", receiptSent });
-  } catch (error) {
-    console.error("Reservation email failed:", error.message);
-    return jsonResponse(request, 500, { message: "Reservation could not be sent. Please try again or call the restaurant." });
-  }
+  return handleSubmission(request, env, "reservation");
 }
 
 async function handleOrder(request, env) {
-  const order = normalizeOrder(await readJson(request));
-  const errors = validateOrder(order);
+  return handleSubmission(request, env, "order");
+}
 
-  if (errors.length) {
-    return jsonResponse(request, 400, { message: errors[0], errors });
-  }
-
-  const ownerEmail = buildOrderEmail(order);
-  const customerEmail = buildOrderReceiptEmail(order);
-
+async function handleSubmission(request, env, type) {
   try {
-    const receiptSent = await sendOwnerThenCustomerReceipt(env, {
-      from: senderAddress(env),
-      to: ownerAddress(env),
-      replyTo: order.customer.email,
-      subject: ownerEmail.subject,
-      text: ownerEmail.text,
-      html: ownerEmail.html
-    }, {
-      from: senderAddress(env),
-      to: order.customer.email,
-      replyTo: ownerAddress(env),
-      subject: customerEmail.subject,
-      text: customerEmail.text,
-      html: customerEmail.html
-    });
-
-    return jsonResponse(request, 200, { message: "Order request sent.", receiptSent });
+    const origin = request.headers.get("Origin");
+    if (origin && origin !== new URL(request.url).origin) return jsonResponse(request, 403, { message: "Please submit from the Argyle Pantry website." });
+    if (!request.headers.get("Content-Type")?.includes("application/json")) return jsonResponse(request, 415, { message: "Please send a JSON request." });
+    const text = await request.text();
+    if (text.length > 32000) return jsonResponse(request, 413, { message: "Your request is too large. Please shorten your notes." });
+    let payload;
+    try { payload = JSON.parse(text); } catch { return jsonResponse(request, 400, { message: "The request could not be read. Please try again." }); }
+    if (!payload || Array.isArray(payload) || typeof payload !== "object") return jsonResponse(request, 400, { message: "Invalid request." });
+    let data;
+    try { data = type === "order" ? normalizeOrder(payload) : normalizeReservation(payload); }
+    catch (error) { return jsonResponse(request, 400, { message: error.message }); }
+    const errors = type === "order" ? validateOrder(data) : validateReservation(data);
+    const customer = type === "order" ? data.customer : data;
+    if (customer.name.length > 120 || customer.phone.length > 40 || customer.email.length > 254 || customer.notes.length > 2000) errors.push("Please shorten your name, contact details or notes.");
+    if (errors.length) return jsonResponse(request, 400, { message: errors[0], errors });
+    const suppliedKey = request.headers.get("Idempotency-Key");
+    if (suppliedKey && !/^[a-zA-Z0-9-]{16,80}$/.test(suppliedKey)) return jsonResponse(request, 400, { message: "Invalid submission reference." });
+    const key = suppliedKey || crypto.randomUUID();
+    // Include canonical content so a changed request never reuses another request's email.
+    const hash = Array.from(new Uint8Array(await crypto.subtle.digest("SHA-256", new TextEncoder().encode(type + key + JSON.stringify(data))))).map(b => b.toString(16).padStart(2, "0")).join("");
+    const reference = `AP-${type === "order" ? "O" : "R"}-${hash.slice(0, 16).toUpperCase()}`;
+    data.reference = reference;
+    let existing;
+    if (env.DB) {
+      await env.DB.prepare("INSERT OR IGNORE INTO submissions (reference, kind, payload, created_at) VALUES (?, ?, ?, ?)")
+        .bind(reference, type, JSON.stringify(data), new Date().toISOString()).run();
+      existing = await env.DB.prepare("SELECT response, owner_email_id FROM submissions WHERE reference = ?").bind(reference).first();
+      if (existing?.response && JSON.parse(existing.response).receiptSent) return jsonResponse(request, 200, JSON.parse(existing.response));
+    }
+    const ownerEmail = type === "order" ? buildOrderEmail(data) : buildReservationEmail(data);
+    const customerEmail = type === "order" ? buildOrderReceiptEmail(data) : buildReservationReceiptEmail(data);
+    const owner = { ...ownerEmail, from: senderAddress(env), to: ownerAddress(env), replyTo: customer.email, idempotencyKey: `owner/${hash}` };
+    const receipt = { ...customerEmail, from: senderAddress(env), to: customer.email, replyTo: ownerAddress(env), idempotencyKey: `receipt/${hash}` };
+    const ownerId = existing?.owner_email_id || await sendResendMail(env, owner);
+    // An owner notification failure must stop the customer receipt.
+    let receiptSent = false, receiptId = null;
+    try { receiptId = await sendResendMail(env, receipt); receiptSent = true; }
+    catch { console.warn("Customer receipt failed", reference); }
+    const result = { message: "Request received.", reference, receiptSent };
+    if (type === "order") { result.items = data.items; result.total = Pantry.money(Pantry.total(data.items)); }
+    if (env.DB) {
+      // Do not turn a completed email submission into a client error if recording its status fails.
+      try {
+        await env.DB.prepare("UPDATE submissions SET owner_email_id = ?, receipt_email_id = ?, response = ? WHERE reference = ?")
+          .bind(ownerId, receiptId, JSON.stringify(result), reference).run();
+      } catch { console.error("Submission status could not be saved", reference); }
+    }
+    return jsonResponse(request, 200, result);
   } catch (error) {
-    console.error("Order email failed:", error.message);
-    return jsonResponse(request, 500, { message: "Order could not be sent. Please try again or call the restaurant." });
+    console.error("Submission service failed", error.name);
+    return jsonResponse(request, 503, { message: "We could not confirm your request. Please retry with the same details, or call 03 6288 7654 before placing another order." });
   }
 }
 
@@ -119,14 +114,6 @@ function optionsResponse(request) {
     status: 204,
     headers: corsHeaders(request)
   });
-}
-
-async function readJson(request) {
-  try {
-    return await request.json();
-  } catch {
-    return {};
-  }
 }
 
 function normalizeReservation(payload = {}) {
@@ -156,82 +143,42 @@ function normalizeOrder(payload = {}) {
       cutleryCount: Number(customer.cutleryCount || 0),
       notes: String(customer.notes || "").trim()
     },
-    items: items.map((item) => ({
-      displayName: String(item.displayName || item.name || "").trim(),
-      category: String(item.category || "").trim(),
-      variant: String(item.variant || "").trim(),
-      price: String(item.price || "").trim(),
-      quantity: Number(item.quantity || 0)
-    }))
+    items: items.map(item => Pantry.canonicalItem(item))
   };
 }
 
-function validateReservation(reservation) {
+function validateContact(customer) {
   const errors = [];
-  [
-    ["name", "Please enter your name."],
-    ["phone", "Please enter your phone number."],
-    ["email", "Please enter your email address."],
-    ["date", "Please choose a reservation date."],
-    ["time", "Please choose a reservation time."],
-    ["guests", "Please enter the number of guests."]
-  ].forEach(([key, message]) => {
-    if (!reservation[key]) errors.push(message);
-  });
+  if (!customer.name) errors.push("Please enter your name.");
+  if (!customer.phone) errors.push("Please enter your phone number.");
+  if (!isValidEmail(customer.email)) errors.push("Please enter a valid email address.");
+  return errors;
+}
 
-  if (reservation.email && !isValidEmail(reservation.email)) errors.push("Please enter a valid email address.");
-  if (reservation.date && !isValidDateValue(reservation.date)) errors.push("Please choose a valid reservation date.");
-  if (reservation.date && isClosedDate(reservation.date)) errors.push(closedDateMessage(reservation.date, "reservation"));
-  if (reservation.date && reservation.time && !isClosedDate(reservation.date) && !isWithinTradingHoursForDate(reservation.date, reservation.time)) {
-    const schedule = tradingScheduleForDate(reservation.date);
-    errors.push(`Reservation time must be between ${formatTime(schedule.open)} and ${formatTime(schedule.close)}.`);
-  }
-  if (reservation.guests && (!Number.isInteger(Number(reservation.guests)) || Number(reservation.guests) < 1)) errors.push("Guests must be at least 1.");
-
+function validateReservation(reservation) {
+  const errors = validateContact(reservation);
+  const scheduleError = Pantry.dateTimeError(reservation.date, reservation.time, "reservation");
+  if (scheduleError) errors.push(scheduleError);
+  if (!Number.isInteger(Number(reservation.guests)) || Number(reservation.guests) < 1) errors.push("Guests must be at least 1.");
   return errors;
 }
 
 function validateOrder(order) {
-  const errors = [];
-  [
-    ["name", "Please enter your name."],
-    ["phone", "Please enter your phone number."],
-    ["email", "Please enter your email address."],
-    ["pickupDate", "Please choose a pickup date."],
-    ["pickupTime", "Please choose a pickup time."],
-    ["serviceType", "Please choose dine in or takeaway."]
-  ].forEach(([key, message]) => {
-    if (!order.customer[key]) errors.push(message);
-  });
-
+  const errors = validateContact(order.customer);
+  const scheduleError = Pantry.dateTimeError(order.customer.pickupDate, order.customer.pickupTime, "order");
+  if (scheduleError) errors.push(scheduleError);
   if (!["Dine in", "Takeaway"].includes(order.customer.serviceType)) errors.push("Please choose dine in or takeaway.");
-  if (order.customer.email && !isValidEmail(order.customer.email)) errors.push("Please enter a valid email address.");
-  if (order.customer.pickupDate && !isValidDateValue(order.customer.pickupDate)) errors.push("Please choose a valid pickup date.");
-  if (order.customer.pickupDate && isClosedDate(order.customer.pickupDate)) errors.push(closedDateMessage(order.customer.pickupDate, "pickup"));
-  if (order.customer.pickupDate && order.customer.pickupTime && !isClosedDate(order.customer.pickupDate) && !isWithinTradingHoursForDate(order.customer.pickupDate, order.customer.pickupTime)) {
-    const schedule = tradingScheduleForDate(order.customer.pickupDate);
-    errors.push(`Pickup time must be between ${formatTime(schedule.open)} and ${formatTime(schedule.close)}.`);
-  }
-  if (order.customer.pickupDate && order.customer.pickupDate < hobartDateTimeParts().date) errors.push("Please choose today or a future pickup date.");
-  if (order.customer.pickupDate && order.customer.pickupTime && !hasMinimumPickupNotice(order.customer.pickupDate, order.customer.pickupTime)) {
-    errors.push(MIN_PICKUP_NOTICE_MESSAGE);
-  }
-  if (order.customer.cutleryNeeded && (!Number.isInteger(order.customer.cutleryCount) || order.customer.cutleryCount < 1 || order.customer.cutleryCount > 50)) {
-    errors.push("Please choose between 1 and 50 cutlery sets.");
-  }
+  if (order.customer.cutleryNeeded && (!Number.isInteger(order.customer.cutleryCount) || order.customer.cutleryCount < 1 || order.customer.cutleryCount > 50)) errors.push("Please choose between 1 and 50 cutlery sets.");
   if (!order.items.length) errors.push("Please add at least one dish to the order.");
-  order.items.forEach((item) => {
-    if (!item.displayName || !Number.isInteger(item.quantity) || item.quantity < 1 || !item.price) {
-      errors.push("One or more order items are invalid.");
-    }
-  });
-
+  if (order.items.length > 100) errors.push("Please call us for larger orders.");
   return errors;
 }
 
 function buildReservationEmail(reservation) {
-  const submittedAt = hobartNow();
+  const submittedAt = "Website request";
   const rows = [
+    ["Reference", reservation.reference],
+    ["Status", "Request received - awaiting restaurant confirmation"],
     ["Name", reservation.name],
     ["Phone", reservation.phone],
     ["Email", reservation.email],
@@ -251,6 +198,8 @@ function buildReservationEmail(reservation) {
 
 function buildReservationReceiptEmail(reservation) {
   const rows = [
+    ["Reference", reservation.reference],
+    ["Status", "Request received - awaiting restaurant confirmation"],
     ["Name", reservation.name],
     ["Phone", reservation.phone],
     ["Email", reservation.email],
@@ -263,18 +212,18 @@ function buildReservationReceiptEmail(reservation) {
   return {
     subject: `Your Argyle Pantry reservation request - ${reservation.date} ${reservation.time}`,
     text: [
-      "Thank you. We have received your reservation request.",
+      "Thank you. We have received your reservation request. Your table is subject to confirmation. Please call 03 6288 7654 for changes.",
       "",
       ...rows.map(([label, value]) => `${label}: ${value}`),
       "",
       "If anything changes, please contact Argyle Pantry."
     ].join("\n"),
-    html: emailShell("Reservation Received", "Thank you. We have received your reservation request.", rows)
+    html: emailShell("Reservation Received", "Thank you. We have received your reservation request. Your table is subject to confirmation. Please call 03 6288 7654 for changes.", rows)
   };
 }
 
 function buildOrderEmail(order) {
-  const submittedAt = hobartNow();
+  const submittedAt = "Website request";
   const customerRows = orderCustomerRows(order, submittedAt);
   const total = orderTotal(order);
 
@@ -286,7 +235,7 @@ function buildOrderEmail(order) {
       "",
       "Order",
       ...order.items.map((item) => `${item.quantity} x ${item.displayName} - ${item.price}`),
-      `Estimated total: ${formatMoney(total)}`
+      `Total (AUD): ${formatMoney(total)}`
     ].join("\n"),
     html: orderEmailShell("New Online Order", customerRows, order, total)
   };
@@ -299,33 +248,23 @@ function buildOrderReceiptEmail(order) {
   return {
     subject: `Your Argyle Pantry order - ${order.customer.pickupDate} ${order.customer.pickupTime}`,
     text: [
-      "Thank you. We have received your order.",
+      "Thank you. We have received your order request. Your requested time is subject to restaurant confirmation. Pay at the restaurant. Call 03 6288 7654 for changes.",
       "",
       "Customer",
       ...customerRows.map(([label, value]) => `${label}: ${value}`),
       "",
       "Order",
       ...order.items.map((item) => `${item.quantity} x ${item.displayName} - ${item.price}`),
-      `Estimated total: ${formatMoney(total)}`,
+      `Total (AUD): ${formatMoney(total)}`,
       "",
       "If anything changes, please contact Argyle Pantry."
     ].join("\n"),
-    html: orderEmailShell("Order Received", customerRows, order, total, "Thank you. We have received your order.")
+    html: orderEmailShell("Order Received", customerRows, order, total, "Thank you. We have received your order request. Your requested time is subject to restaurant confirmation. Pay at the restaurant. Call 03 6288 7654 for changes.")
   };
 }
 
-async function sendOwnerThenCustomerReceipt(env, ownerMailOptions, customerMailOptions) {
-  await sendResendMail(env, ownerMailOptions);
-  try {
-    await sendResendMail(env, customerMailOptions);
-    return true;
-  } catch (error) {
-    console.warn("Customer receipt email could not be sent:", error.message);
-    return false;
-  }
-}
-
-async function sendResendMail(env, { from, to, replyTo, subject, text, html }) {
+async function sendResendMail(env, { from, to, replyTo, subject, text, html, idempotencyKey }) {
+  if (env.RESERVATION_DRY_RUN === "true") return "dry-run-email";
   const apiKey = env.RESEND_API_KEY || env.SMTP_PASS;
   if (!apiKey) throw new Error("Email API key is not configured.");
 
@@ -336,14 +275,19 @@ async function sendResendMail(env, { from, to, replyTo, subject, text, html }) {
     method: "POST",
     headers: {
       Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
+      "Content-Type": "application/json",
+      "Idempotency-Key": idempotencyKey
     },
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    signal: AbortSignal.timeout(15000)
   });
 
   if (!response.ok) {
-    throw new Error(`Resend rejected the message: ${response.status} ${await response.text()}`);
+    throw new Error(`Email provider returned status ${response.status}`);
   }
+  const result = await response.json();
+  if (!result.id) throw new Error("Email provider did not confirm acceptance.");
+  return result.id;
 }
 
 function ownerAddress(env) {
@@ -364,7 +308,7 @@ function corsHeaders(request) {
   ];
   const allowOrigin = allowed.includes(origin) || origin.endsWith(".pages.dev") ? origin : "https://argylepantry.com.au";
   return {
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type, Idempotency-Key",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Origin": allowOrigin,
     "Vary": "Origin"
@@ -373,6 +317,10 @@ function corsHeaders(request) {
 
 function orderCustomerRows(order, submittedAt = "") {
   const rows = [
+    ["Reference", order.reference],
+    ["Status", "Request received - awaiting restaurant confirmation"],
+    ["Payment", "Pay at the restaurant"],
+    ["Address", "46 Argyle Street, Hobart"],
     ["Name", order.customer.name],
     ["Phone", order.customer.phone],
     ["Email", order.customer.email],
@@ -448,7 +396,7 @@ function orderEmailShell(label, customerRows, order, total, intro = "") {
                 <tbody>${itemRows}</tbody>
                 <tfoot>
                   <tr>
-                    <th colspan="4" style="text-align:right;padding:12px;border:1px solid #e3dbce;">Estimated total</th>
+                    <th colspan="4" style="text-align:right;padding:12px;border:1px solid #e3dbce;">Total (AUD)</th>
                     <td style="text-align:right;padding:12px;border:1px solid #e3dbce;font-weight:700;">${escapeHtml(formatMoney(total))}</td>
                   </tr>
                 </tfoot>
@@ -473,88 +421,6 @@ function rowsTable(rows) {
 
 function isValidEmail(value) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value);
-}
-
-function isValidDateValue(value) {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
-  if (!match) return false;
-  const [, year, month, day] = match.map(Number);
-  const date = new Date(year, month - 1, day);
-  return date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day;
-}
-
-function isSaturday(value) {
-  const [year, month, day] = String(value).split("-").map(Number);
-  return Boolean(year && month && day) && new Date(year, month - 1, day).getDay() === 6;
-}
-
-function isClosedDate(dateValue) {
-  return tradingScheduleForDate(dateValue).closed;
-}
-
-function closedDateMessage(dateValue, type) {
-  const schedule = tradingScheduleForDate(dateValue);
-  if (schedule.message) return schedule.message;
-  return `Argyle Pantry is closed on Saturdays. Please choose another ${type} date.`;
-}
-
-function tradingScheduleForDate(dateValue) {
-  const special = SPECIAL_TRADING_DAYS[dateValue];
-  if (special?.closed) return { open: TRADING_OPEN, close: TRADING_CLOSE, closed: true, message: special.message };
-  if (isSaturday(dateValue)) return { open: TRADING_OPEN, close: TRADING_CLOSE, closed: true, message: "" };
-  return { open: TRADING_OPEN, close: special?.close || TRADING_CLOSE, closed: false, message: special?.message || "" };
-}
-
-function isWithinTradingHoursForDate(dateValue, timeValue) {
-  const schedule = tradingScheduleForDate(dateValue);
-  return !schedule.closed && /^\d{2}:\d{2}$/.test(timeValue) && timeValue >= schedule.open && timeValue <= schedule.close;
-}
-
-function formatTime(value) {
-  const [hours, minutes] = String(value).split(":").map(Number);
-  const suffix = hours >= 12 ? "pm" : "am";
-  const displayHour = hours % 12 || 12;
-  return minutes ? `${displayHour}:${String(minutes).padStart(2, "0")}${suffix}` : `${displayHour}${suffix}`;
-}
-
-function hasMinimumPickupNotice(dateValue, timeValue) {
-  const now = hobartDateTimeParts();
-  if (dateValue > now.date) return true;
-  if (dateValue < now.date) return false;
-  return timeToMinutes(timeValue) >= now.minutes + MIN_PICKUP_NOTICE_MINUTES;
-}
-
-function hobartDateTimeParts() {
-  const parts = new Intl.DateTimeFormat("en-AU", {
-    timeZone: "Australia/Hobart",
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hourCycle: "h23"
-  }).formatToParts(new Date()).reduce((values, part) => {
-    values[part.type] = part.value;
-    return values;
-  }, {});
-
-  return {
-    date: `${parts.year}-${parts.month}-${parts.day}`,
-    minutes: Number(parts.hour) * 60 + Number(parts.minute)
-  };
-}
-
-function timeToMinutes(value) {
-  const [hours, minutes] = String(value).split(":").map(Number);
-  return hours * 60 + minutes;
-}
-
-function hobartNow() {
-  return new Date().toLocaleString("en-AU", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Australia/Hobart"
-  });
 }
 
 function orderTotal(order) {

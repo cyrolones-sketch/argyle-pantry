@@ -1,0 +1,6 @@
+User-agent: *
+Allow: /
+Disallow: /checkout
+Disallow: /success
+Disallow: /api/
+Sitemap: https://argylepantry.com.au/sitemap.xml

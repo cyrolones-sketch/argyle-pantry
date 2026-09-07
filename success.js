@@ -6,9 +6,10 @@ const successIntro = document.querySelector("#successIntro");
 const submission = readSubmission();
 const pageType = new URLSearchParams(window.location.search).get("type");
 
-if (submission?.type === "order" || pageType === "order") {
+const validSubmission = submission?.reference && submission.type === pageType && Date.now() - Date.parse(submission.submittedAt) >= 0 && Date.now() - Date.parse(submission.submittedAt) < 24 * 60 * 60 * 1000;
+if (validSubmission && submission.type === "order" && submission.customer && Array.isArray(submission.items)) {
   renderOrderSuccess(submission);
-} else if (submission?.type === "reservation" || pageType === "reservation") {
+} else if (validSubmission && submission.type === "reservation" && submission.reservation) {
   renderReservationSuccess(submission);
 } else {
   renderFallback();
@@ -25,9 +26,7 @@ function readSubmission() {
 function renderOrderSuccess(data) {
   successKicker.textContent = "Order received";
   successTitle.textContent = "Thank you for your order";
-  successIntro.textContent = data
-    ? "We have received your order. A confirmation has been sent to Argyle Pantry, and we will prepare your food as quickly as we can."
-    : "We have received your order. We will prepare your food as quickly as we can.";
+  successIntro.textContent = "Your order request has been sent to Argyle Pantry. Your requested time is subject to restaurant confirmation. Pay at the restaurant when you collect your meal.";
 
   if (!data) {
     summaryRoot.replaceChildren(infoCard("Order confirmation", [["Status", "Order submitted"]]));
@@ -35,6 +34,9 @@ function renderOrderSuccess(data) {
   }
 
   const customerRows = [
+    ["Reference", data.reference],
+    ["Status", "Request received - awaiting restaurant confirmation"],
+    ["Pickup address", "46 Argyle Street, Hobart"],
     ["Name", data.customer.name],
     ["Phone", data.customer.phone],
     ["Email", data.customer.email],
@@ -55,9 +57,7 @@ function renderOrderSuccess(data) {
 function renderReservationSuccess(data) {
   successKicker.textContent = "Reservation received";
   successTitle.textContent = "Thank you for your reservation";
-  successIntro.textContent = data
-    ? "We have received your reservation request. A confirmation has been sent to Argyle Pantry."
-    : "We have received your reservation request.";
+  successIntro.textContent = "Your reservation request has been sent to Argyle Pantry. This is not yet a confirmed booking. Please call us if you need to confirm your table or make a change.";
 
   if (!data) {
     summaryRoot.replaceChildren(infoCard("Reservation confirmation", [["Status", "Reservation submitted"]]));
@@ -65,6 +65,8 @@ function renderReservationSuccess(data) {
   }
 
   const rows = [
+    ["Reference", data.reference],
+    ["Status", "Request received - awaiting restaurant confirmation"],
     ["Name", data.reservation.name],
     ["Phone", data.reservation.phone],
     ["Email", data.reservation.email],
@@ -81,10 +83,10 @@ function renderReservationSuccess(data) {
 }
 
 function renderFallback() {
-  successKicker.textContent = "Submitted";
-  successTitle.textContent = "Thank you";
-  successIntro.textContent = "If your request was submitted successfully, Argyle Pantry has received it.";
-  summaryRoot.replaceChildren(infoCard("Next step", [["Need help?", "Please contact Argyle Pantry if you want to confirm your request."]]));
+  successKicker.textContent = "No submission details";
+  successTitle.textContent = "We cannot verify a request here";
+  successIntro.textContent = "This page does not contain a recent successful submission. Check your email, or call us before placing the same order again.";
+  summaryRoot.replaceChildren(infoCard("Need help?", [["Phone", "03 6288 7654"], ["Address", "46 Argyle Street, Hobart"]]));
 }
 
 function infoCard(title, rows) {
@@ -135,7 +137,7 @@ function orderCard(items, total) {
 
   const totalRow = document.createElement("div");
   totalRow.className = "success-total";
-  totalRow.innerHTML = `<span>Estimated total</span><strong>${escapeHtml(total)}</strong>`;
+  totalRow.innerHTML = `<span>Total (AUD)</span><strong>${escapeHtml(total)}</strong>`;
 
   card.append(list, totalRow);
   return card;
