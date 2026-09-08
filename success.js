@@ -26,7 +26,7 @@ function readSubmission() {
 function renderOrderSuccess(data) {
   successKicker.textContent = "Order received";
   successTitle.textContent = "Thank you for your order";
-  successIntro.textContent = "Your order request has been sent to Argyle Pantry. Your requested time is subject to restaurant confirmation. Pay at the restaurant when you collect your meal.";
+  successIntro.textContent = "Thank you. We have received your order. Preparation may take longer during busy periods. Pay at the restaurant when you collect your meal. For changes, please call 03 6288 7654.";
 
   if (!data) {
     summaryRoot.replaceChildren(infoCard("Order confirmation", [["Status", "Order submitted"]]));
@@ -35,7 +35,7 @@ function renderOrderSuccess(data) {
 
   const customerRows = [
     ["Reference", data.reference],
-    ["Status", "Request received - awaiting restaurant confirmation"],
+    ["Status", "Order received"],
     ["Pickup address", "46 Argyle Street, Hobart"],
     ["Name", data.customer.name],
     ["Phone", data.customer.phone],

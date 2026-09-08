@@ -50,6 +50,13 @@ test('order uses server prices, sends store first, escapes notes and returns ref
     assert.equal(result.receiptSent, true);
     assert.ok(calls[0].parsed.html.includes('&lt;img'));
     assert.ok(calls[0].parsed.html.includes(result.reference));
+    for (const { parsed } of calls) {
+      assert.match(parsed.text, /Status: Order received/);
+      assert.match(parsed.html, /Order received/);
+      assert.doesNotMatch(parsed.text + parsed.html, /awaiting|subject to restaurant confirmation/i);
+      assert.match(parsed.text, /Pickup time: 13:00/);
+      assert.match(parsed.text, /Pay at the restaurant/);
+    }
     await send(payload);
     assert.equal(calls[0].headers['Idempotency-Key'], calls[2].headers['Idempotency-Key']);
     assert.equal(calls[0].body, calls[2].body);

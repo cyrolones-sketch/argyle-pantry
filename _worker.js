@@ -248,7 +248,7 @@ function buildOrderReceiptEmail(order) {
   return {
     subject: `Your Argyle Pantry order - ${order.customer.pickupDate} ${order.customer.pickupTime}`,
     text: [
-      "Thank you. We have received your order request. Your requested time is subject to restaurant confirmation. Pay at the restaurant. Call 03 6288 7654 for changes.",
+      "Thank you. We have received your order. Preparation may take longer during busy periods. Pay at the restaurant. Call 03 6288 7654 for changes.",
       "",
       "Customer",
       ...customerRows.map(([label, value]) => `${label}: ${value}`),
@@ -259,7 +259,7 @@ function buildOrderReceiptEmail(order) {
       "",
       "If anything changes, please contact Argyle Pantry."
     ].join("\n"),
-    html: orderEmailShell("Order Received", customerRows, order, total, "Thank you. We have received your order request. Your requested time is subject to restaurant confirmation. Pay at the restaurant. Call 03 6288 7654 for changes.")
+    html: orderEmailShell("Order Received", customerRows, order, total, "Thank you. We have received your order. Preparation may take longer during busy periods. Pay at the restaurant. Call 03 6288 7654 for changes.")
   };
 }
 
@@ -318,7 +318,7 @@ function corsHeaders(request) {
 function orderCustomerRows(order, submittedAt = "") {
   const rows = [
     ["Reference", order.reference],
-    ["Status", "Request received - awaiting restaurant confirmation"],
+    ["Status", "Order received"],
     ["Payment", "Pay at the restaurant"],
     ["Address", "46 Argyle Street, Hobart"],
     ["Name", order.customer.name],
