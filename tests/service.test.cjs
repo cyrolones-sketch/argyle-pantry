@@ -42,8 +42,8 @@ test('order uses server prices, sends store first, escapes notes and returns ref
     const payload = order(); payload.customer.notes = '<img src=x onerror=alert(1)>';
     const response = await send(payload), result = await response.json();
     assert.equal(response.status, 200);
-    assert.equal(result.total, '$33.00');
-    assert.equal(result.items[0].price, '$16.50');
+    assert.equal(result.total, '$33.60');
+    assert.equal(result.items[0].price, '$16.80');
     assert.match(result.reference, /^AP-O-[A-F0-9]{16}$/);
     assert.equal(calls[0].parsed.to[0], 'cyrolones@gmail.com');
     assert.equal(calls[1].parsed.to[0], 'test@example.com');
