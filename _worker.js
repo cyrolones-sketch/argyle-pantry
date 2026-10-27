@@ -1,7 +1,8 @@
 import "./menu-data.js";
 import "./storefront.js";
 const Pantry = globalThis.Pantry;
-const EMAIL_TO_DEFAULT = "cyrolones@gmail.com";
+// Keep notification routing in the release so stale EMAIL_TO bindings cannot override it.
+const OWNER_EMAIL = "cy-1995@hotmail.com";
 const FROM_DEFAULT = "Argyle Pantry <orders@argylepantry.com.au>";
 export default {
   async fetch(request, env) {
@@ -75,8 +76,8 @@ async function handleSubmission(request, env, type) {
     }
     const ownerEmail = type === "order" ? buildOrderEmail(data) : buildReservationEmail(data);
     const customerEmail = type === "order" ? buildOrderReceiptEmail(data) : buildReservationReceiptEmail(data);
-    const owner = { ...ownerEmail, from: senderAddress(env), to: ownerAddress(env), replyTo: customer.email, idempotencyKey: `owner/${hash}` };
-    const receipt = { ...customerEmail, from: senderAddress(env), to: customer.email, replyTo: ownerAddress(env), idempotencyKey: `receipt/${hash}` };
+    const owner = { ...ownerEmail, from: senderAddress(env), to: OWNER_EMAIL, replyTo: customer.email, idempotencyKey: `owner/${hash}` };
+    const receipt = { ...customerEmail, from: senderAddress(env), to: customer.email, replyTo: OWNER_EMAIL, idempotencyKey: `receipt/${hash}` };
     const ownerId = existing?.owner_email_id || await sendResendMail(env, owner);
     // An owner notification failure must stop the customer receipt.
     let receiptSent = false, receiptId = null;
@@ -288,10 +289,6 @@ async function sendResendMail(env, { from, to, replyTo, subject, text, html, ide
   const result = await response.json();
   if (!result.id) throw new Error("Email provider did not confirm acceptance.");
   return result.id;
-}
-
-function ownerAddress(env) {
-  return env.EMAIL_TO || EMAIL_TO_DEFAULT;
 }
 
 function senderAddress(env) {

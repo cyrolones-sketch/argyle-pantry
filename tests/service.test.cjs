@@ -45,7 +45,7 @@ test('order uses server prices, sends store first, escapes notes and returns ref
     assert.equal(result.total, '$33.60');
     assert.equal(result.items[0].price, '$16.80');
     assert.match(result.reference, /^AP-O-[A-F0-9]{16}$/);
-    assert.equal(calls[0].parsed.to[0], 'cyrolones@gmail.com');
+    assert.equal(calls[0].parsed.to[0], 'cy-1995@hotmail.com');
     assert.equal(calls[1].parsed.to[0], 'test@example.com');
     assert.equal(result.receiptSent, true);
     assert.ok(calls[0].parsed.html.includes('&lt;img'));
@@ -62,6 +62,29 @@ test('order uses server prices, sends store first, escapes notes and returns ref
     assert.equal(calls[0].body, calls[2].body);
     assert.notEqual(calls[0].headers['Idempotency-Key'], calls[1].headers['Idempotency-Key']);
   } finally { global.fetch = original; }
+});
+
+test('orders and reservations route to the new mailbox despite a legacy EMAIL_TO binding', async () => {
+  const original = global.fetch;
+  const calls = [];
+  env.EMAIL_TO = 'cyrolones@gmail.com';
+  global.fetch = async (url, options) => {
+    calls.push(JSON.parse(options.body));
+    return Response.json({ id: `email-${calls.length}` });
+  };
+  try {
+    const reservation = { name: 'Test guest', email: 'test@example.com', phone: '0400000000', date: nextOpenDate(), time: '13:00', guests: '2' };
+    for (const [route, payload] of [['orders', order()], ['reservations', reservation]]) {
+      calls.length = 0;
+      const response = await send(payload, route);
+      assert.equal(response.status, 200);
+      assert.equal(calls.length, 2);
+      assert.deepEqual(calls[0].to, ['cy-1995@hotmail.com']);
+      assert.equal(calls[0].reply_to, 'test@example.com');
+      assert.deepEqual(calls[1].to, ['test@example.com']);
+      assert.equal(calls[1].reply_to, 'cy-1995@hotmail.com');
+    }
+  } finally { global.fetch = original; delete env.EMAIL_TO; }
 });
 
 test('failed store email never sends a customer receipt', async () => {
@@ -116,7 +139,7 @@ test('optional D1 journal stores requests and retries only the failed receipt', 
     const retry = await (await send(order())).json();
     assert.equal(retry.receiptSent, true);
     assert.equal(first.reference, retry.reference);
-    assert.deepEqual(calls, ['cyrolones@gmail.com', 'test@example.com', 'test@example.com']);
+    assert.deepEqual(calls, ['cy-1995@hotmail.com', 'test@example.com', 'test@example.com']);
     await send(order());
     assert.equal(calls.length, 3);
   } finally { global.fetch = original; delete env.DB; db.close(); }
