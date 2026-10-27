@@ -17,6 +17,7 @@
 The existing Cloudflare Pages project is `argyle-pantry-site`, linked to GitHub.
 Pushes are checked by Cloudflare Pages; verify a preview before merging to main.
 Production email secrets remain in Cloudflare, never in this repository.
+Order and reservation notifications go to `cy-1995@hotmail.com`, defined by `OWNER_EMAIL` in `_worker.js`. Customer receipts use the same reply-to address. Legacy `EMAIL_TO` environment bindings are no longer used.
 The Node server uses the same Worker handler as production. It now needs Node 22.13 or newer.
 
 ## Verification
