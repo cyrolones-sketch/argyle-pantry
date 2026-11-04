@@ -4,7 +4,8 @@
   const NOTICE = "Please choose a pickup time at least 15 minutes from now. We need at least 15 minutes to prepare your food. During busy periods it may take a little longer, but we will prepare your order as quickly as we can.";
   const specialDays = {
     "2026-08-14": { close: "18:00" },
-    "2026-08-16": { closed: true }
+    "2026-08-16": { closed: true },
+    "2026-11-08": { closed: true }
   };
   function nowParts(now = new Date()) {
     const values = Object.fromEntries(new Intl.DateTimeFormat("en-AU", {

@@ -6,7 +6,7 @@ const workerPromise = import(pathToFileURL(path.resolve('_worker.js')).href);
 const env = { RESEND_API_KEY: 'test-not-a-real-key', ASSETS: { fetch: () => new Response('asset') } };
 function nextOpenDate() {
   let date = new Date(Date.now() + 3 * 86400000);
-  while (date.getUTCDay() === 6) date = new Date(+date + 86400000);
+  while (globalThis.Pantry.schedule(date.toISOString().slice(0, 10)).closed) date = new Date(+date + 86400000);
   return date.toISOString().slice(0, 10);
 }
 function order() { return { customer: { name: 'Test guest', phone: '0400000000', email: 'test@example.com', pickupDate: nextOpenDate(), pickupTime: '13:00', serviceType: 'Takeaway', cutleryNeeded: true, cutleryCount: 2, notes: 'Test only' }, items: [{ name: 'Karaage Chicken Don', variant: 'Curry', quantity: 2, price: '$0.01' }] }; }
@@ -20,6 +20,16 @@ test('shared Hobart calendar: Saturdays, past dates, specials and exact notice',
   assert.equal(P.schedule('2026-09-05').closed, true);
   assert.equal(P.schedule('2026-08-16').closed, true);
   assert.equal(P.schedule('2026-08-14').close, '18:00');
+  assert.equal(P.schedule('2026-11-08').closed, true);
+  assert.deepEqual(P.schedule('2026-11-09'), { open: '11:30', close: '20:30', closed: false });
+  assert.equal(P.schedule('2026-11-15').closed, false);
+  for (const type of ['order', 'reservation']) {
+    const beforeClosure = new Date('2026-11-04T01:00:00Z');
+    assert.deepEqual(P.slots('2026-11-08', type, beforeClosure), []);
+    assert.match(P.dateTimeError('2026-11-08', '13:00', type, beforeClosure), /closed on this date/);
+    assert.equal(P.dateTimeError('2026-11-09', '13:00', type, beforeClosure), '');
+    assert.equal(P.dateTimeError('2026-11-15', '13:00', type, beforeClosure), '');
+  }
   const now = new Date('2026-09-07T01:00:30Z');
   assert.equal(P.nowParts(now).date, '2026-09-07');
   assert.ok(P.dateTimeError('2026-09-07', '11:15', 'order', now));
